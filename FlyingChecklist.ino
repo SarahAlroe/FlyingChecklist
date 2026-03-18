@@ -49,6 +49,8 @@ const uint8_t FEATURE_BUTTON_ARRAY = 0b10;   // Has a 6 button array
 const uint8_t FEATURE_SCROLL_WHEEL = 0b100;  // Has a scroll wheel
 const uint8_t FEATURE_DAC = 0b1000;          // Has a DAC and speaker
 
+const uint8_t buttonPins[] = { PIN_SW_0, PIN_SW_1, PIN_SW_2, PIN_SW_3, PIN_SW_4, PIN_SW_5 };
+
 /*Board setup CONFIG*/
 #define HW_VERSION 10                                                   // [Revision][Subrevision]
 const uint8_t BOARD_FEATURES = 0 | FEATURE_BUTTON_ARRAY | FEATURE_DAC;  //Features should be ORed into config.
@@ -65,8 +67,8 @@ Dictaphone dictaphone(PIN_MIC_CLK, PIN_MIC_DATA);
 JsonDocument systemConfiguration;
 RTC_DATA_ATTR SystemStatus status;  // Keeps system status
 SystemStatus statusMonitor;         // For monitoring changes to trigger screen updartes
-UIConfig uiConfig;
-BLECompanionServer bleCompanionServer;
+SystemConfig systemConfig;
+BLECompanionServer bleCompanionServer(status);
 
 USBMSC msc;                        // USB Mass Storage Class (MSC) object
 EspClass _flash;                   // Flash memory object
@@ -81,7 +83,7 @@ GFXcanvas1 screenElement(NOTE_HEIGHT, SCREEN_WIDTH);  // TODO collapse into offS
 GFXcanvas1 noteField(SCREEN_WIDTH - 22, NOTE_HEIGHT - 1);
 GFXcanvas1 offScreen(SCREEN_HEIGHT, SCREEN_WIDTH);
 
-DisplayManager display(sharpDisplay, screenElement, noteField, offScreen, status, uiConfig);
+DisplayManager display(sharpDisplay, screenElement, noteField, offScreen, status, systemConfig);
 NotesManager notes(FFat, display);
 
 /*Globals*/
@@ -208,13 +210,21 @@ void setup(void) {
     shiftNotesRelative(-1);
   } else if (wakeupPin == PIN_SW_RIGHT) {
     shiftNotesRelative(1);
-  } else if (wakeupPin == PIN_SW_5) {
-    notes.scrollDown();
-  } else if (wakeupPin == PIN_SW_0) {
-    notes.scrollUp();
   } else if (wakeupPin == PIN_SL_1) {
     // If deliberately wake by unlock, let attempt transcribing files again.
     nextTranscriptionAttempt = 0;
+  } else if (wakeupPin == PIN_SW_0) {
+    handleArrayButton(0);
+  }  else if (wakeupPin == PIN_SW_1) {
+    handleArrayButton(1);
+  } else if (wakeupPin == PIN_SW_2) {
+    handleArrayButton(2);
+  } else if (wakeupPin == PIN_SW_3) {
+    handleArrayButton(3);
+  } else if (wakeupPin == PIN_SW_4) {
+    handleArrayButton(4);
+  } else if (wakeupPin == PIN_SW_5) {
+    handleArrayButton(5);
   }
   if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0 || wakeup_reason == ESP_SLEEP_WAKEUP_EXT1){
     // Reset the notify LED to stop blinking when awoke from user interaction
@@ -224,7 +234,7 @@ void setup(void) {
 
   xTaskCreate(
     transcribeMessagesTask, "TranscribeNow",  // A name just for humans
-    8192,                                     // The stack size
+    16384,//8192,                                     // The stack size
     NULL,                                     // Pass reference to a variable describing the task number
     1,                                        // priority
     NULL                                      // Task handle is not used here - simply pass NULL
@@ -393,10 +403,10 @@ void loop(void) {
     statusMonitor = status;
   }
 
-  if (status.processes > 0) {
+  /*if (status.processes > 0) {
     // If some other task is doing a thing, delay doing stuff
     whenToSleep = millis() + sleepIncrement;
-  }
+  }*/
 
   if (millis() > whenToSleep && !status.charging && status.processes <= 0 && itemToAdd.text == "") {
     // If nothing has happened a while, and we're not powered
@@ -590,7 +600,6 @@ bool checkListButtons() {
     return true;
   }
 
-  const uint8_t buttonPins[] = { PIN_SW_0, PIN_SW_1, PIN_SW_2, PIN_SW_3, PIN_SW_4, PIN_SW_5 };
   int8_t pressedArrayButton = -1;
   for (int i = 0; i < 6; i++) {
     if (digitalRead(buttonPins[i]) == HIGH) {
@@ -600,65 +609,69 @@ bool checkListButtons() {
   if (pressedArrayButton != -1) {
     ESP_LOGV(TAG, "Scanned buttons, got %d pressed", pressedArrayButton);
     setCPUFreq(240);
-    // Handle special cases
-    if (display.isFullscreenNote()){
-      display.animFullscreenNoteOut();
-      while (aButtonIsHeld()){
-        delay(5);
-      }
-      return true;
-    }
-    if (pressedArrayButton == 0 && notes.canScrollUp()) {
-      while (digitalRead(PIN_SW_0) == HIGH) {
-        notes.scrollUp();
-        delay(2);
-      }
-      return true;
-    }
-    if (pressedArrayButton == 5 && notes.canScrollDown()) {
-      while (digitalRead(PIN_SW_5) == HIGH) {
-        notes.scrollDown();
-        delay(2);
-      }
-      return true;
-    }
-    if (notes.hasNoteAtDot(pressedArrayButton)) {
-      // Otherwise just a regular note button clicked
-      float animProgress = 0.0;
-      unsigned long startTime = millis();
-      unsigned long endTime = startTime + 400;
-      unsigned long deltaTime = 0;
-      while (digitalRead(buttonPins[pressedArrayButton]) == HIGH) {
-        deltaTime = millis() - startTime;
-        animProgress = ((float)deltaTime) / ((float)400);
-        display.animCrossNote(pressedArrayButton, animProgress);
-        if (animProgress >= 1.0) {
-          // If we've completed cross anim, formalize immediately to get visual effect
-          ESP_LOGD(TAG, "Completed animation, crossing note at %d.", pressedArrayButton);
-          notes.crossNoteAtDot(pressedArrayButton);
-          while (digitalRead(buttonPins[pressedArrayButton]) == HIGH) {
-            // Then just wait around for button to be let go
-            delay(5);
-          }
-        }
-        delay(1);
-      }
-      if (animProgress < 1.0) {
-        while (animProgress > 0.0) {
-          animProgress -= 0.2;
-          display.animCrossNote(pressedArrayButton, animProgress);
-          delay(1);
-        }
-      }
-      if (deltaTime < 200 && systemConfiguration[STR_UI][STR_NOTE_FULLSCREEN]){
-        // Short click
-        // If enabled, maximize window from this element, set global flag (to enable sleep)
-        display.animFullscreenNoteIn(pressedArrayButton);
-      }
-    }
+    handleArrayButton(pressedArrayButton);
     return true;
   }
   return false;
+}
+
+void handleArrayButton(uint8_t pressedArrayButton){
+  // Handle special cases
+  if (display.isFullscreenNote()){
+    display.animFullscreenNoteOut();
+    while (aButtonIsHeld()){
+      delay(5);
+    }
+    return;
+  }
+  if (pressedArrayButton == 0 && notes.canScrollUp()) {
+    while (digitalRead(PIN_SW_0) == HIGH) {
+      notes.scrollUp();
+      delay(2);
+    }
+    return;
+  }
+  if (pressedArrayButton == 5 && notes.canScrollDown()) {
+    while (digitalRead(PIN_SW_5) == HIGH) {
+      notes.scrollDown();
+      delay(2);
+    }
+    return;
+  }
+  if (notes.hasNoteAtDot(pressedArrayButton)) {
+    // Otherwise just a regular note button clicked
+    float animProgress = 0.0;
+    unsigned long startTime = millis();
+    unsigned long endTime = startTime + 400;
+    unsigned long deltaTime = 0;
+    while (digitalRead(buttonPins[pressedArrayButton]) == HIGH) {
+      deltaTime = millis() - startTime;
+      animProgress = ((float)deltaTime) / ((float)400);
+      display.animCrossNote(pressedArrayButton, animProgress);
+      if (animProgress >= 1.0) {
+        // If we've completed cross anim, formalize immediately to get visual effect
+        ESP_LOGD(TAG, "Completed animation, crossing note at %d.", pressedArrayButton);
+        notes.crossNoteAtDot(pressedArrayButton);
+        while (digitalRead(buttonPins[pressedArrayButton]) == HIGH) {
+          // Then just wait around for button to be let go
+          delay(5);
+        }
+      }
+      delay(1);
+    }
+    if (animProgress < 1.0) {
+      while (animProgress > 0.0) {
+        animProgress -= 0.2;
+        display.animCrossNote(pressedArrayButton, animProgress);
+        delay(1);
+      }
+    }
+    if (deltaTime < 200 && systemConfiguration[STR_UI][STR_NOTE_FULLSCREEN]){
+      // Short click
+      // If enabled, maximize window from this element, set global flag (to enable sleep)
+      display.animFullscreenNoteIn(pressedArrayButton);
+    }
+  }
 }
 
 bool aButtonIsHeld(){
@@ -796,7 +809,33 @@ void disconnectWifi() {
   }
 }
 
+uint8_t countRecordingsToProcess() {
+  File recordingDirectory = FFat.open(DIRNAME_RECORDINGS);
+  if (!recordingDirectory || !recordingDirectory.isDirectory()) {
+    ESP_LOGE(TAG, "Error opening directory %s ", DIRNAME_RECORDINGS);
+    return false;
+  }
+  uint8_t fileCount;
+  File file = recordingDirectory.openNextFile();
+  while (file) {
+    fileCount++;
+    file.close();
+    file = recordingDirectory.openNextFile();
+  }
+  ESP_LOGV(TAG, "Has %d new files to upload", fileCount);
+  recordingDirectory.close();
+  status.filesWaiting = fileCount; // Technically a side effect, but never incorrect.
+  return fileCount;
+}
+
+bool hasRecordingsToProcess(){
+  uint8_t recordingCount = countRecordingsToProcess();
+  return recordingCount >= 1;
+}
+
 void transcribeMessagesTask(void *pvParameters) {
+  bool hasWifi = systemConfiguration[STR_HAS_WIFI];
+  bool hasBLE = systemConfiguration[STR_HAS_BLE];
   for (;;) {
     status.processes++;
     if (status.sleeping){ // If going to sleep, stop doing things.
@@ -805,7 +844,7 @@ void transcribeMessagesTask(void *pvParameters) {
     }
     updateBatteryPercentage();
 
-    if(systemConfiguration[STR_HAS_BLE]){
+    if(hasBLE){ //TODO Only if something to do or at long interval or powered
       beginBLE();
       bleCompanionServer.setBattery(status.battery);
     }
@@ -813,10 +852,10 @@ void transcribeMessagesTask(void *pvParameters) {
     // Update time if not synced
     if (time(NULL) < ANCIENT_TIME                                              // If time not set (in the past), start setting it,
         && (lastNTPTimestmp == 0 || (lastNTPTimestmp + 1800) < time(NULL))) {  // But only if first time this boot, or 30 mins since last attempt
-      if(systemConfiguration[STR_HAS_WIFI]){
+      if(hasWifi){
         getNTPOverWifi();
-      }else if(systemConfiguration[STR_HAS_BLE]){
-        while (time(NULL) < ANCIENT_TIME && millis() < 1 * MS_TO_MIN_FACTOR){
+      }else if(hasBLE){
+        while (time(NULL) < ANCIENT_TIME && millis() < 20 * MS_TO_S_FACTOR){
           delay(10);
           // TODO check if works
         }
@@ -825,38 +864,55 @@ void transcribeMessagesTask(void *pvParameters) {
 
     processCron();
 
+    hasRecordingsToProcess();
+    ESP_LOGI(TAG, "Is time for next transcription attempt: %d. Has Wifi: %d. Has BLE: %d. Has recordings to process: %d", (nextTranscriptionAttempt < time(NULL)), hasWifi, hasBLE, status.filesWaiting);
     // Check for files to transcribe, then transcribe
     if (nextTranscriptionAttempt < time(NULL)) {
-      if(systemConfiguration[STR_HAS_WIFI] && (systemConfiguration[STR_WHISPER][STR_DOMAIN] | "") != ""){
+      String whisperDomain = systemConfiguration[STR_WHISPER][STR_DOMAIN]| "";
+      bool hasWhisperConfig = whisperDomain != "";
+      if(hasWifi && hasWhisperConfig){
         transcribeOverWifi();
       }
 
-      if ((systemConfiguration[STR_HAS_BLE] && hasRecordingsToProcess())){ // TODO or other motivations...
-        
+      hasRecordingsToProcess(); //TODO fix
+      if (hasBLE && status.filesWaiting){ // TODO or other motivations...
         uint32_t startTime = millis();
         ESP_LOGI(TAG, "Serving files over BLE");
-        while (bleCompanionServer.serveFiles() || millis() - startTime > 1 * MS_TO_MIN_FACTOR ) {
+        bleCompanionServer.hasFilesPending();
+        while (bleCompanionServer.serveFiles()) {
           delay(5);
           if (millis() - startTime > 6 * MS_TO_MIN_FACTOR ) {
             ESP_LOGW(TAG, "BLE file serving hit watchdog timeout");
             break;
           }
         }
+        delay(1000);
       }
 
-      if (hasRecordingsToProcess()) {
+      hasRecordingsToProcess();
+      ESP_LOGI(TAG, "Past serving files, has recordings to process still: %d",status.filesWaiting);
+
+      if (status.filesWaiting) {
         // If still has recordings to process, wait for 30 minutes until trying again
         nextTranscriptionAttempt = time(NULL) + 30 * S_TO_MIN_FACTOR;
+        //nextTranscriptionAttempt = time(NULL) + 2 * S_TO_MIN_FACTOR;
       }
     }
 
+    ESP_LOGI(TAG, "Has responses waiting: %d", status.responsesWaiting);
+    uint32_t responseStartTime = millis();
+    while(hasBLE && status.responsesWaiting && (millis() - responseStartTime) < (1 * MS_TO_MIN_FACTOR) ){
+      bleCompanionServer.serveFiles();
+      delay(10);
+    }
+
     disconnectWifi();
-    disconnectBLE();
+    //disconnectBLE();
     status.processes--;
 
     ESP_LOGI(TAG, "Current BG processes: %d", status.processes);
 
-    delay(1000);  // Every two seconds to check while things go as planned
+    delay(2000);  // Every two seconds to check while things go as planned
   }
 }
 
@@ -910,7 +966,6 @@ void transcribeOverWifi(){
           FFat.remove(DIRNAME_RECORDINGS "/" + fileName);  // Delete the file after transcription
           // TODO keep for playback?
         }
-
         file = recordingDirectory.openNextFile();  // Proceed to any additional files
       }
       whisperCert.close();  // Close the certificate file.
@@ -1053,35 +1108,18 @@ uint8_t getListIndex(String page) {
   return 0;
 }
 
-uint8_t countRecordingsToProcess() {
-  File recordingDirectory = FFat.open(DIRNAME_RECORDINGS);
-  if (!recordingDirectory || !recordingDirectory.isDirectory()) {
-    ESP_LOGE(TAG, "Error opening directory %s ", DIRNAME_RECORDINGS);
-    return false;
-  }
-  uint8_t fileCount;
-  File file = recordingDirectory.openNextFile();
-  while (file) {
-    fileCount++;
-    file.close();
-    file = recordingDirectory.openNextFile();
-  }
-  ESP_LOGV(TAG, "Has %d new files to upload", fileCount);
-  recordingDirectory.close();
-  status.filesWaiting = fileCount; // Technically a side effect, but never incorrect.
-  return fileCount;
-}
-
-bool hasRecordingsToProcess(){
-  return countRecordingsToProcess() > 0;
-}
-
 void goToSleep() {
+  ESP_LOGD(TAG, "Preparing for sleep");
+
+  // Turn off wifi
+  disconnectWifi();
+  disconnectBLE();
+
   // Update display to show sleeping
   status.sleeping = true;
+
   display.redrawDisplay();  // Redraw the entire display, ready for long term sleep
 
-  ESP_LOGD(TAG, "Preparing for sleep");
   digitalWrite(PIN_OUT_PERIPH_PWR, HIGH);
   gpio_hold_en((gpio_num_t)PIN_OUT_PERIPH_PWR);
   gpio_deep_sleep_hold_en();
@@ -1089,10 +1127,6 @@ void goToSleep() {
 
   notes.save();                       // Save any changes to the notes
   notesIndex = notes.getNoteIndex();  // Make sure to store in RTC memory the scroll index of the notebook, so we don't loose position on wake
-
-  // Turn off wifi
-  disconnectWifi();
-  disconnectBLE();
 
   // Disable internal pulldown for power monitoring pin. Otherwise only possible to read when on, as voltage on power dips to 1.3v
   rtc_gpio_pullup_dis((gpio_num_t)PIN_IN_POWERED);
@@ -1340,10 +1374,10 @@ void initializeConfiguration() {
     systemConfiguration[STR_UI][STR_LED_FEEDBACK] = false;
     systemConfiguration[STR_UI][STR_VIBRATION_FEEDBACK] = false;
     systemConfiguration[STR_UI][STR_DISPLAY_FEEDBACK] = false;
-    systemConfiguration[STR_UI][STR_VIBRATION_POSITION] = true;
+    systemConfiguration[STR_UI][STR_VIBRATION_POSITION] = false;
     systemConfiguration[STR_UI][STR_TEXT_MINIMUM_SIZE] = 1;
     systemConfiguration[STR_UI][STR_TEXT_CONST_SIZE] = false;
-    systemConfiguration[STR_UI][STR_NOTE_FULLSCREEN] = false;
+    systemConfiguration[STR_UI][STR_NOTE_FULLSCREEN] = true;
 
     systemConfiguration[STR_TIMEZONE] = "CET-1CEST,M3.5.0,M10.5.0/3";  //https://github.com/esp8266/Arduino/blob/master/cores/esp8266/TZ.h
     systemConfiguration[STR_UPDATE][STR_URL] = "";
@@ -1356,12 +1390,19 @@ void initializeConfiguration() {
     configFile.close();
   }
 
-  uiConfig.showClock = systemConfiguration[STR_UI][STR_SHOW_CLOCK] | true;
-  uiConfig.clockUpdateRate = systemConfiguration[STR_UI][STR_CLOCK_UPDATE_MIN] | 5;
-  uiConfig.showCompletionRate = systemConfiguration[STR_UI][STR_SHOW_COMPLETION_RATE] | true;
-  uiConfig.showMAC = systemConfiguration[STR_UI][STR_SHOW_MAC] | true;
-  uiConfig.minTextSize = systemConfiguration[STR_UI][STR_TEXT_MINIMUM_SIZE] | 1;
-  uiConfig.constTextSize = systemConfiguration[STR_UI][STR_TEXT_CONST_SIZE] | false;
+  systemConfig.showClock = systemConfiguration[STR_UI][STR_SHOW_CLOCK] | true;
+  systemConfig.clockUpdateRate = systemConfiguration[STR_UI][STR_CLOCK_UPDATE_MIN] | 5;
+  systemConfig.showCompletionRate = systemConfiguration[STR_UI][STR_SHOW_COMPLETION_RATE] | true;
+  systemConfig.showMAC = systemConfiguration[STR_UI][STR_SHOW_MAC] | true;
+  systemConfig.doLEDFeedback = systemConfiguration[STR_UI][STR_LED_FEEDBACK] | false;
+  systemConfig.doVibrationFeedback = systemConfiguration[STR_UI][STR_VIBRATION_FEEDBACK] | false;
+  systemConfig.doDisplayFeedback = systemConfiguration[STR_UI][STR_DISPLAY_FEEDBACK] | false;
+  systemConfig.minTextSize = systemConfiguration[STR_UI][STR_TEXT_MINIMUM_SIZE] | 1;
+  systemConfig.constTextSize = systemConfiguration[STR_UI][STR_TEXT_CONST_SIZE] | false;
+  systemConfig.doVibrationPosition = systemConfiguration[STR_UI][STR_VIBRATION_POSITION] | false;
+  systemConfig.canFullscreenNotes = systemConfiguration[STR_UI][STR_NOTE_FULLSCREEN] | true;
+  systemConfig.hasWifi = systemConfiguration[STR_HAS_WIFI] | true;
+  systemConfig.hasBLE = systemConfiguration[STR_HAS_BLE] | false;
 
   isConfigInitialized = true;  // Don't initialize again later
 }

@@ -5,8 +5,8 @@
 #define uS_TO_S_FACTOR 1000000ULL
 #define S_TO_MIN_FACTOR 60ULL
 #define MS_TO_S_FACTOR 1000ULL
-#define MS_TO_MIN_FACTOR S_TO_MIN_FACTOR * MS_TO_S_FACTOR
-#define uS_TO_MIN_FACTOR S_TO_MIN_FACTOR * uS_TO_S_FACTOR
+#define MS_TO_MIN_FACTOR 60000ULL
+#define uS_TO_MIN_FACTOR 60000000ULL
 #define ULP_START_OFFSET 32  // Offset of ulp program in memory (randomly selected)
 #define ULP_ADDR_LED_FB 4
 const uint32_t sleepIncrement = 5000; // Time to wait after activity before sleeping device
@@ -147,17 +147,28 @@ struct SystemStatus {
            && recording == other.recording
            && processes == other.processes
            && charging == other.charging
-           && battery == other.battery;
+           && battery == other.battery
+           && ble == other.ble
+           && filesWaiting == other.filesWaiting
+           && responsesWaiting == other.responsesWaiting
+           && hasNews == other.hasNews;
   }
 };
 
-struct UIConfig {
+struct SystemConfig {
   bool showClock;
   uint16_t clockUpdateRate;
   bool showCompletionRate;
   bool showMAC;
+  bool doDisplayFeedback;
+  bool doVibrationFeedback;
+  bool doLEDFeedback;
+  bool doVibrationPosition;
   uint8_t minTextSize;
   bool constTextSize;
+  bool canFullscreenNotes;
+  bool hasWifi;
+  bool hasBLE;
 };
 
 struct ListItemToAdd{

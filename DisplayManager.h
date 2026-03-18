@@ -20,10 +20,8 @@ class NotesManager;
 class DisplayManager
 {
 public:
-    DisplayManager(Adafruit_SharpMem &disp, GFXcanvas1 &screenE, GFXcanvas1 &noteFi, GFXcanvas1 &offScr, SystemStatus &status, UIConfig &uiConfig)
-        : display(disp), screenElement(screenE), noteField(noteFi), offScreen(offScr), status(status), uiConfig(uiConfig)
-    //DisplayManager(Adafruit_SharpMem &disp, Status &status)
-    //    : display(disp), status(status)
+    DisplayManager(Adafruit_SharpMem &disp, GFXcanvas1 &screenE, GFXcanvas1 &noteFi, GFXcanvas1 &offScr, SystemStatus &status, SystemConfig &systemConfig)
+        : display(disp), screenElement(screenE), noteField(noteFi), offScreen(offScr), status(status), systemConfig(systemConfig)
     {
     }
     void init(NotesManager *notesManager);
@@ -76,7 +74,7 @@ private:
     //GFXcanvas1 screenElement = GFXcanvas1(7*8, 400);
     //GFXcanvas1 noteField = GFXcanvas1(400 - 22, 7*8 - 1);
     SystemStatus &status;
-    UIConfig &uiConfig;
+    SystemConfig &systemConfig;
 
     NotesManager *nm;
 

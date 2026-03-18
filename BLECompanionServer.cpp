@@ -21,16 +21,14 @@ static const char* TAG = "BLECompanionServer";
 #define COMMAND_DONE 0x0
 #define COMMAND_NEXT_CHECKLIST_UPLOAD 0x1
 #define COMMAND_RESTART_CHECKLIST_UPLOAD 0x2
-#define COMMAND_CHECKLIST_DOWNLOAD 0x3
+#define COMMAND_CONFIRM_CHECKLIST_UPLOAD 0x3
 #define COMMAND_ADD_LIST_ITEM 0x4
+#define COMMAND_CHECKLIST_DOWNLOAD 0x5
 
 const BLEUUID TIME_SERVICE_UUID = BLEUUID((uint16_t)0x1805);
 const BLEUUID TIME_CHAR_UUID = BLEUUID((uint16_t)0x2a2b);
 const BLEUUID BATTERY_SERVICE_UUID = BLEUUID((uint16_t)0x180F);
 const BLEUUID BATTERY_CHAR_UUID = BLEUUID((uint16_t)0x2A19);
-
-BLECompanionServer::BLECompanionServer() {
-}
 
 class BLECompanionServerServerCallbacks : public BLEServerCallbacks {
   BLECompanionServer* parent;
@@ -39,12 +37,13 @@ public:
     : parent(p) {}
   void onConnect(BLEServer* pServer) override {
     parent->deviceConnected = true;
-    parent->deviceWasConnected = true;
     ESP_LOGI(TAG, "Device connected");
   }
   void onDisconnect(BLEServer* pServer) override {
     parent->deviceConnected = false;
+    parent->deviceWasConnected = true;
     ESP_LOGI(TAG, "Device disconnected");
+    parent->startAdvertising();
   }
   /*void onMtuChanged(BLEServer* pServer, ble_gap_conn_desc *desc, uint16_t mtu) override {
         parent->chunkSize = mtu - 3; // 3 bytes for ATT header
@@ -95,10 +94,25 @@ public:
   }
 };
 
+class BLECompanionServer::DataCallback : public BLECharacteristicCallbacks {
+  BLECompanionServer* parent;
+public:
+  DataCallback(BLECompanionServer* p)
+    : parent(p) {}
+  void onWrite(BLECharacteristic* pCharacteristic) override {
+    parent->onData(pCharacteristic->getValue());
+  }
+};
+
 void BLECompanionServer::begin(fs::FS& fsRef, void (*newItemCB)(ListItemToAdd, bool), bool keepFile) {
+  static bool companionServerLoaded = false;
+  if (companionServerLoaded){
+    return;
+  }
   fs = &fsRef;
   newItemCallback = newItemCB;
   keepFileAfterTransfer = keepFile;
+  fileChecksum = (uint8_t*) calloc(1, 512);
   ESP_LOGI(TAG, "Initialising BLE Device + Server");
   BLEDevice::init("Checklist");
   pServer = BLEDevice::createServer();
@@ -107,7 +121,7 @@ void BLECompanionServer::begin(fs::FS& fsRef, void (*newItemCB)(ListItemToAdd, b
   // File transfer service and characteristics
   BLEService* pFileService = pServer->createService(FILE_SERVICE_UUID);
   pFilenameCharacteristic = pFileService->createCharacteristic(FILE_NAME_UUID,
-                                                               BLECharacteristic::PROPERTY_READ  // | BLECharacteristic::PROPERTY_NOTIFY
+                                                               BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE  // | BLECharacteristic::PROPERTY_NOTIFY
   );
   pFileSizeCharacteristic = pFileService->createCharacteristic(FILE_SIZE_UUID, BLECharacteristic::PROPERTY_READ);
   pFileHashCharacteristic = pFileService->createCharacteristic(FILE_HASH_UUID, BLECharacteristic::PROPERTY_READ);
@@ -117,6 +131,7 @@ void BLECompanionServer::begin(fs::FS& fsRef, void (*newItemCB)(ListItemToAdd, b
                                                              BLECharacteristic::PROPERTY_NOTIFY |
                                                              //BLECharacteristic::PROPERTY_INDICATE |
                                                              BLECharacteristic::PROPERTY_WRITE);
+  pDataCharacteristic->setCallbacks(new DataCallback(this));
   pCommandCharacteristic = pFileService->createCharacteristic(COMMAND_UUID,
                                                               BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
   pCommandCharacteristic->setCallbacks(new CommandCallback(this));
@@ -146,54 +161,86 @@ void BLECompanionServer::begin(fs::FS& fsRef, void (*newItemCB)(ListItemToAdd, b
   pAdvertising->start();
   //pAdvertising->setScanResponse(false);
   //pAdvertising->setMinPreferred(0x0);  // set value to 0x00 to not advertise this parameter
+  setBattery(status.battery);
   BLEDevice::startAdvertising();
-  filesPending = hasFilesPending();
-  if (filesPending) {
+  if (hasFilesPending()) {
     prepareNextFile();
   }
+  companionServerLoaded = true;
 }
+
+void BLECompanionServer::startAdvertising(){
+  pServer->startAdvertising();
+}
+
 void BLECompanionServer::setBattery(uint8_t battery) {
   pBatteryCharacteristic->setValue(&battery, 1);
 }
 
 void BLECompanionServer::onCommand(uint8_t* command) {
+  ESP_LOGI(TAG, "Recieved command %d",command[0]);
   if (command[0] != 0) {
     if (command[0] == COMMAND_ADD_LIST_ITEM) {
       ListItemToAdd itemToAdd;
-      itemToAdd.text = pDataCharacteristic->getValue();
-      itemToAdd.listIndex = 0;  //TODO
+      itemToAdd.text = responseBuffer;
+      itemToAdd.listIndex = pFilenameCharacteristic->getValue().toInt();
+      ESP_LOGI(TAG, "Adding list item '%s' to list %d",itemToAdd.text.c_str(), itemToAdd.listIndex);
       newItemCallback(itemToAdd, true);
+      responseBuffer = "";
+      if (status.responsesWaiting>0){
+        status.responsesWaiting --;
+      }
     }
     if (command[0] == COMMAND_NEXT_CHECKLIST_UPLOAD) {
-      if (bytesSent != 0) {
-        removeSentFile();
-        if (filesPending) {
-          prepareNextFile();
-        }
+      if (transferring){
+        finishFile(false);
+        prepareNextFile();
       }
       startTransfer();
     }
     if (command[0] == COMMAND_RESTART_CHECKLIST_UPLOAD) {
+      if (transferring){
+        finishFile(false);
+      }
       prepareNextFile();
-      startTransfer();
+    }
+    if (command[0] == COMMAND_CONFIRM_CHECKLIST_UPLOAD){
+      if (bytesSent != 0) {
+        removeSentFile();
+      }
+      if (hasFilesPending()) {
+          prepareNextFile();
+      }
     }
   }
 }
 
+void BLECompanionServer::onData(String data) {
+  ESP_LOGI(TAG, "Recieved note data part '%s'",data.c_str());
+  responseBuffer = responseBuffer + data;
+}
+
 void BLECompanionServer::startTransfer() {
-  transferring = true;
   uint16_t connId = pServer->getConnId();
   chunkSize = min(pServer->getPeerMTU(connId) - 3, 480);  //512
-  fileChecksum = (uint8_t*)calloc(chunkSize, 1);          // Must be cleared
+  memset(fileChecksum, 0, 512);
   ESP_LOGI(TAG, "Starting transfer with chunksize %u", chunkSize);
-  delay(10000);
+  transferring = true;
+  delay(100);
 }
 
 bool BLECompanionServer::serveFiles() {
-  if (deviceConnected && transferring) { //Cant send if disconnected
+  //ESP_LOGV(TAG, "Serving files. Device connected: %d, transferring: %d, files pending: %d", deviceConnected, transferring, filesPending);
+  if (deviceConnected && transferring && currentFile) { //Cant send if disconnected
+    //ESP_LOGV(TAG, "Sending chunk");
     sendNextChunk();
+  }else if ((!deviceConnected && deviceWasConnected)){
+    ESP_LOGV(TAG, "Finishing file");
+    finishFile(false);
+    prepareNextFile();
+    deviceWasConnected = false;
   }
-  return transferring || (filesPending && !deviceWasConnected);  // If transferring or we have files pending and the client has not been connected and is now disconnected
+  return transferring || filesPending;  // If transferring or we have files pending 
 }
 
 bool BLECompanionServer::hasFilesPending() {
@@ -201,9 +248,11 @@ bool BLECompanionServer::hasFilesPending() {
   if (potentialFile) {
     potentialFile.close();
     pFilePendingCharacteristic->setValue(1);
+    filesPending = true;
     return true;
   }
   pFilePendingCharacteristic->setValue(0);
+  filesPending = false;
   return false;
 }
 
@@ -213,9 +262,9 @@ File BLECompanionServer::getNewFile() {
     ESP_LOGE(TAG, "Error scanning new dir");
     return File();
   }
-  currentFile = newDir.openNextFile();
+  File nextFile = newDir.openNextFile();
   newDir.close();
-  return currentFile;
+  return nextFile;
 }
 
 void BLECompanionServer::prepareNextFile() {
@@ -235,7 +284,10 @@ void BLECompanionServer::prepareNextFile() {
 }
 
 void BLECompanionServer::sendNextChunk() {
-  if (!transferring || !currentFile) return;
+  if ((!transferring) || (!currentFile)) {
+    ESP_LOGV(TAG, "Transferring: %d. Or Without currentFile %d", transferring, currentFile);
+    return;
+  }
 
   if (bytesSent < fileSize) {
     uint8_t buffer[chunkSize];
@@ -248,29 +300,37 @@ void BLECompanionServer::sendNextChunk() {
       uint16_t connectionId = pServer->getConnId();
       uint16_t attributeHandle = pDataCharacteristic->getHandle();
       sendNotification(connectionId, attributeHandle, buffer, readBytes);
+      /*if (!sendNotification(connectionId, attributeHandle, buffer, readBytes)){
+        finishFile(false);
+        return;
+      }*/
       for (size_t i = 0; i < readBytes; ++i) {
         fileChecksum[i] ^= buffer[i];
       }
       bytesSent += readBytes;
       delay(20);
     }
-    ESP_LOGI(TAG, "Sent %lu bytes out of %lu", bytesSent, fileSize);
+    ESP_LOGV(TAG, "Sent %lu bytes out of %lu", bytesSent, fileSize);
   } else {
     ESP_LOGI(TAG, "Finished sending file %s", currentFilename.c_str());
-    finishFile();
+    finishFile(true);
   }
 }
 
-void BLECompanionServer::finishFile() {
+void BLECompanionServer::finishFile(bool success) {
+  if (success){
+    status.responsesWaiting ++;
+  }
   ESP_LOGI(TAG, "Closing file");
-  currentFile.close();
+  if (currentFile){
+    currentFile.close();  
+  }
 
   ESP_LOGI(TAG, "Clearing characteristics");
   pDataCharacteristic->setValue("");
   pFilenameCharacteristic->setValue("");
   ESP_LOGI(TAG, "Checksum of file %s: %u (partial)", currentFilename.c_str(), fileChecksum[0]);
   pFileHashCharacteristic->setValue(fileChecksum, chunkSize);
-  free(fileChecksum);
   pFileHashCharacteristic->notify();
   transferring = false;
   hasFilesPending(); // Update if we have files pending
@@ -284,7 +344,7 @@ void BLECompanionServer::removeSentFile() {
     ESP_LOGI(TAG, "Removing file %s", currentFilename.c_str());
     fs->remove(DIRNAME_RECORDINGS + String("/") + currentFilename);
   }
-  filesPending = hasFilesPending();
+  hasFilesPending();
 }
 
 // Borrowed from https://github.com/skorokithakis/middle/
@@ -295,7 +355,7 @@ void BLECompanionServer::removeSentFile() {
 // which caused ~70% of file data to be silently lost during streaming.
 bool BLECompanionServer::sendNotification(uint16_t connection_id, uint16_t attribute_handle,
                               uint8_t *data, int length) {
-  for (int attempt = 0; attempt < 1000; attempt++) {
+  for (int attempt = 0; attempt < 600; attempt++) {
     // ble_gatts_notify_custom consumes the mbuf regardless of success or
     // failure, so we must allocate a fresh one on every attempt.
     struct os_mbuf *om = ble_hs_mbuf_from_flat(data, length);

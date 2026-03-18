@@ -70,6 +70,16 @@ const unsigned char bmp_WAITING [] PROGMEM = {
 	0x00, 0x00, 0x1f, 0xf8, 0x08, 0x10, 0x08, 0x10, 0x08, 0x10, 0x07, 0xe0, 0x03, 0xc0, 0x01, 0x80, 
 	0x01, 0x80, 0x02, 0x40, 0x04, 0x20, 0x08, 0x10, 0x0f, 0xf0, 0x0f, 0xf0, 0x1f, 0xf8, 0x00, 0x00
 };
+// 'BLE', 16x16px
+const unsigned char bmp_BLE [] PROGMEM = {
+	0x01, 0x00, 0x01, 0x80, 0x01, 0xc0, 0x19, 0x60, 0x0d, 0x30, 0x07, 0x30, 0x03, 0x60, 0x01, 0xc0, 
+	0x01, 0xc0, 0x03, 0x60, 0x07, 0x30, 0x0d, 0x30, 0x19, 0x60, 0x01, 0xc0, 0x01, 0x80, 0x01, 0x00
+};
+// 'BLE_OFF', 16x16px
+const unsigned char bmp_BLE_OFF [] PROGMEM = {
+	0x01, 0x00, 0x01, 0x80, 0x01, 0xc4, 0x19, 0x48, 0x0d, 0x10, 0x07, 0x20, 0x02, 0x40, 0x00, 0x80, 
+	0x01, 0x00, 0x02, 0x60, 0x04, 0x30, 0x09, 0x30, 0x11, 0x60, 0x21, 0xc0, 0x01, 0x80, 0x01, 0x00
+};
 
 // 'RECORD_L', 80x80px
 const unsigned char bmp_RECORD_L [] PROGMEM = {
@@ -242,6 +252,9 @@ void DisplayManager::init(NotesManager *notesManager) {
   display.setTextColor(BLACK);
 
   noteField.setTextSize(2);
+  noteField.cp437(true);
+  screenElement.cp437(true);
+  offScreen.cp437(true);
   screenElement.setRotation(1);
   screenElement.setTextColor(BLACK);
 
@@ -273,7 +286,7 @@ void DisplayManager::drawHeader() {
   
   uint8_t leftIndex = 0; 
   
-  if (uiConfig.showClock){
+  if (systemConfig.showClock){
     display.setTextSize(2);
     display.setCursor(HEADER_MARGIN + leftIndex * HEADER_ICON_SPACING, HEADER_MARGIN);
     time_t now = time(NULL);         // Get current time
@@ -284,7 +297,7 @@ void DisplayManager::drawHeader() {
     leftIndex += 3;
   }
 
-  if (uiConfig.showCompletionRate){
+  if (systemConfig.showCompletionRate){
     // TODO: Move to the right.
     display.setTextSize(1);
     display.setCursor(HEADER_MARGIN + leftIndex * HEADER_ICON_SPACING, HEADER_MARGIN);
@@ -345,14 +358,26 @@ void DisplayManager::drawHeader() {
   }
   rightIndex ++;
 
-  if (status.wifi){
+  if (systemConfig.hasWifi){
+    if (status.wifi){
     drawHeaderIcon(bmp_WIFI, ALIGN_RIGHT, rightIndex);
-  }else {
-    drawHeaderIcon(bmp_WIFI_FAIL, ALIGN_RIGHT, rightIndex);
+    }else {
+      drawHeaderIcon(bmp_WIFI_FAIL, ALIGN_RIGHT, rightIndex);
+    }
+    rightIndex ++;
   }
-  rightIndex ++;
 
-  if (uiConfig.showMAC){
+  if (systemConfig.hasBLE){
+    if (status.ble){
+      drawHeaderIcon(bmp_BLE, ALIGN_RIGHT, rightIndex);
+    }else {
+      drawHeaderIcon(bmp_BLE_OFF, ALIGN_RIGHT, rightIndex);
+    }
+    rightIndex ++;
+  }
+  
+
+  if (systemConfig.showMAC){
     //Draw last few bytes of MAC - for identification
     display.setTextSize(1);
     unsigned char mac_base[8] = {0};
@@ -612,8 +637,8 @@ void DisplayManager::prepareNoteField(int16_t noteNumber, bool crossIfChecked) {
 }
 
 uint8_t DisplayManager::getNoteTextSizeFromLength(uint32_t length){
-  if (uiConfig.constTextSize){
-    return uiConfig.minTextSize;
+  if (systemConfig.constTextSize){
+    return systemConfig.minTextSize;
   }
   uint8_t targetSize = 1;
   if (length<6){// A single line (of max 6 characters)
@@ -626,12 +651,12 @@ uint8_t DisplayManager::getNoteTextSizeFromLength(uint32_t length){
   }else{ // Smallest possible (36 char wide, 6 lines, 216 chars)
     targetSize = 1;
   }
-  return (max( targetSize, uiConfig.minTextSize));
+  return (max( targetSize, systemConfig.minTextSize));
 }
 
 uint8_t DisplayManager::getFullscreenTextSizeFromLength(uint32_t length){
-  if (uiConfig.constTextSize){
-    return uiConfig.minTextSize;
+  if (systemConfig.constTextSize){
+    return systemConfig.minTextSize;
   }
   uint8_t targetSize = 1;
   if (length<156){
@@ -641,12 +666,12 @@ uint8_t DisplayManager::getFullscreenTextSizeFromLength(uint32_t length){
   }else{ // 1520 characters
     targetSize = 1;
   }
-  return (max( targetSize, uiConfig.minTextSize));
+  return (max( targetSize, systemConfig.minTextSize));
 }
 
 uint8_t DisplayManager::getNoteLineThicknessFromLength(uint32_t length){
-  if (uiConfig.constTextSize){
-    return uiConfig.minTextSize;
+  if (systemConfig.constTextSize){
+    return systemConfig.minTextSize;
   }
   uint8_t targetSize = 1;
   if (length<6){// A single line (of max 6 characters)
@@ -659,7 +684,7 @@ uint8_t DisplayManager::getNoteLineThicknessFromLength(uint32_t length){
   }else{ // Smallest possible (36 char wide, 6 lines, 216 chars)
     targetSize =  1;
   }
-  return (max( targetSize, uiConfig.minTextSize)); // Breaks if min text size >4, but who would...
+  return (max( targetSize, systemConfig.minTextSize)); // Breaks if min text size >4, but who would...
 }
 
 void DisplayManager::animCrossNote(int16_t noteScreenIndex, float animProgress){
@@ -1086,8 +1111,8 @@ void DisplayManager::drawFullscreenNote(){
   display.fillRect(frameToX, frameToY, frameToWidth, frameToHeight, BLACK);
   display.fillRect(innerToX, innerToY, innerToWidth, innerToHeight, WHITE);
   String noteText = nm->getNoteText(fullscreenNoteNumber);
-  uint8_t textSize = uiConfig.minTextSize;
-  if (!uiConfig.constTextSize){
+  uint8_t textSize = systemConfig.minTextSize;
+  if (!systemConfig.constTextSize){
     textSize = getFullscreenTextSizeFromLength(noteText.length());
   }
   display.setTextSize(textSize);

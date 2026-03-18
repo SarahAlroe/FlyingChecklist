@@ -8,29 +8,34 @@
 
 class BLECompanionServer {
     public:
-        BLECompanionServer();
+        BLECompanionServer(SystemStatus &status):status(status){}
         void begin(fs::FS &fs, void(*newItemCB)(ListItemToAdd, bool), bool keepFileAfterTransfer = false);
         bool serveFiles();
         class TimeCharacteristicCallback;
         class CommandCallback;
+        class DataCallback;
         bool deviceConnected = false;
         bool deviceWasConnected = false;
         void onCommand(uint8_t * command);
         void setBattery(uint8_t batteryLevel = 0);
+        void startAdvertising();
+        bool hasFilesPending();
+        void onData(String data);
         
     private:
         void startNextFile();
         void startTransfer();
         void sendNextChunk();
-        void finishFile();
+        void finishFile(bool success);
         void prepareNextFile();
         void removeSentFile();
         File getNewFile();
-        bool hasFilesPending();
         bool sendNotification(uint16_t connection_id, uint16_t attribute_handle,
                               uint8_t *data, int length);
+        SystemStatus &status;
         size_t chunkSize = 20; // BLE max payload, Adjust based on MTU negotiation
-        uint8_t *fileChecksum;
+        uint8_t *fileChecksum = NULL;
+        String responseBuffer = "";
         fs::FS *fs;
         String folder;
         File currentFile;

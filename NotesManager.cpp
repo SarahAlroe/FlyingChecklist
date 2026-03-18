@@ -41,14 +41,14 @@ String NotesManager::replaceCommonUnicode(String text) {
   // Replace chars with appropriate CP437 chars https://learn.adafruit.com/adafruit-gfx-graphics-library/graphics-primitives#extended-characters-cp437-and-a-lurking-bug-3100368
   charReplacement[0] = 0x91;
   ms.GlobalReplace("æ", charReplacement);
-  charReplacement[0] = 0xEB;  // No good candidates
-  ms.GlobalReplace("ø", charReplacement);
-  charReplacement[0] = 0x86;
-  ms.GlobalReplace("å", charReplacement);
   charReplacement[0] = 0x92;
   ms.GlobalReplace("Æ", charReplacement);
-  charReplacement[0] = 0xEC;
+  charReplacement[0] = 0xEC;  // No good candidates
+  ms.GlobalReplace("ø", charReplacement);
+  charReplacement[0] = 0xED;
   ms.GlobalReplace("Ø", charReplacement);
+  charReplacement[0] = 0x86;
+  ms.GlobalReplace("å", charReplacement);
   charReplacement[0] = 0x8F;
   ms.GlobalReplace("Å", charReplacement);
   ESP_LOGV(TAG, "Revised text '%s' as '%s'.", captionBuffer, text.c_str());
