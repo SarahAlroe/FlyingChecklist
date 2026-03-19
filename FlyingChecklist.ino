@@ -857,7 +857,6 @@ void transcribeMessagesTask(void *pvParameters) {
       }else if(hasBLE){
         while (time(NULL) < ANCIENT_TIME && millis() < 20 * MS_TO_S_FACTOR){
           delay(10);
-          // TODO check if works
         }
       }
     }
@@ -1403,6 +1402,11 @@ void initializeConfiguration() {
   systemConfig.canFullscreenNotes = systemConfiguration[STR_UI][STR_NOTE_FULLSCREEN] | true;
   systemConfig.hasWifi = systemConfiguration[STR_HAS_WIFI] | true;
   systemConfig.hasBLE = systemConfiguration[STR_HAS_BLE] | false;
+
+  // TODO Temporary fix for misspelling in config. Remove in a couple versions.e
+  if (systemConfiguration[STR_TEXT_TO_SPEECH] && !systemConfiguration[STR_WHISPER]){
+    systemConfiguration[STR_WHISPER] = systemConfiguration[STR_TEXT_TO_SPEECH];
+  }
 
   isConfigInitialized = true;  // Don't initialize again later
 }

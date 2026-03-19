@@ -29,7 +29,8 @@ const time_t ANCIENT_TIME = 1771512100;
 #define STR_SSID "ssid"
 #define STR_PASSWORD "pass"
 
-#define STR_WHISPER "tts"
+#define STR_WHISPER "stt"
+#define STR_TEXT_TO_SPEECH "tts"
 #define STR_DOMAIN "domain"
 #define STR_PATH "path"
 #define STR_MODEL "model"
