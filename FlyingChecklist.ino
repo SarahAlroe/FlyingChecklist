@@ -21,8 +21,9 @@
 #include "driver/rtc_io.h"
 #include <USB.h>
 #include <USBMSC.h>
-#include "HttpsOTAUpdate.h"
 #include <Update.h>
+#include <HTTPClient.h>
+#include <HTTPUpdate.h>
 
 /*Internal*/
 #include "config.h"
@@ -301,30 +302,42 @@ void debugMenu() {
       sharpDisplay.refresh();
       if (connectWifi()) {
         sharpDisplay.println("Connected.");
+        sharpDisplay.print("Getting NTP");
+        sharpDisplay.refresh();
+        getNTPOverWifi();
         sharpDisplay.print("Updating");
         sharpDisplay.refresh();
         File updateCert = FFat.open(FILENAME_UPDATE_CERT);
         char *cert = (char *)malloc(updateCert.size() + 1);
         updateCert.read((uint8_t *)cert, updateCert.size());
         updateCert.close();
-        HttpsOTA.begin(systemConfiguration[STR_UPDATE][STR_URL], cert);
-        HttpsOTAStatus_t otastatus = HttpsOTA.status();
-        while (otastatus != HTTPS_OTA_SUCCESS && otastatus != HTTPS_OTA_FAIL) {
-          delay(1000);
-          sharpDisplay.print(".");
-          sharpDisplay.refresh();
-        }
-        if (otastatus == HTTPS_OTA_SUCCESS) {
-          sharpDisplay.println("Firmware written successfully.");
-        } else if (otastatus == HTTPS_OTA_FAIL) {
-          sharpDisplay.println("Firmware Upgrade Fail.");
+        NetworkClientSecure client;
+        ESP_LOGV(TAG, "Cert: %s", cert);
+        client.setCACert(cert);
+        client.setTimeout(12000);
+        t_httpUpdate_return ret = httpUpdate.update(client, systemConfiguration[STR_UPDATE][STR_URL]);
+        switch (ret) {
+          case HTTP_UPDATE_FAILED:
+            ESP_LOGE(TAG, "HTTP_UPDATE_FAILED Error (%d): %s\n", httpUpdate.getLastError(), httpUpdate.getLastErrorString().c_str());
+            sharpDisplay.printf("Update Failed! Error (%d): %s\n", httpUpdate.getLastError(), httpUpdate.getLastErrorString().c_str());
+            break;
+
+          case HTTP_UPDATE_NO_UPDATES:
+            ESP_LOGW(TAG, "HTTP_UPDATE_NO_UPDATES");
+            sharpDisplay.println("No updates to install.");
+            break;
+
+          case HTTP_UPDATE_OK: 
+            ESP_LOGI(TAG, "HTTP_UPDATE_OK");
+            sharpDisplay.println("Upgrade success.");
+            break;
         }
       } else {
         sharpDisplay.println("Failed to connect.");
       }
-      sharpDisplay.println("Restarting in 4 seconds.");
+      sharpDisplay.println("Restarting in 6 seconds.");
       sharpDisplay.refresh();
-      delay(4000);
+      delay(6000);
       ESP.restart();
     }
     if (digitalRead(PIN_SW_4)) {
@@ -1356,8 +1369,8 @@ void initializeConfiguration() {
     systemConfiguration[STR_HAS_WIFI] = true;
     systemConfiguration[STR_HAS_BLE] = false;
 
-    systemConfiguration[STR_WIFI][0][STR_SSID] = "WIFI SSID Name";
-    systemConfiguration[STR_WIFI][0][STR_PASSWORD] = "12345678";
+    systemConfiguration[STR_WIFI][0][STR_SSID] = "";
+    systemConfiguration[STR_WIFI][0][STR_PASSWORD] = "";
 
     systemConfiguration[STR_WHISPER][STR_DOMAIN] = "";
     systemConfiguration[STR_WHISPER][STR_PATH] = "";
@@ -1379,7 +1392,7 @@ void initializeConfiguration() {
     systemConfiguration[STR_UI][STR_NOTE_FULLSCREEN] = true;
 
     systemConfiguration[STR_TIMEZONE] = "CET-1CEST,M3.5.0,M10.5.0/3";  //https://github.com/esp8266/Arduino/blob/master/cores/esp8266/TZ.h
-    systemConfiguration[STR_UPDATE][STR_URL] = "";
+    systemConfiguration[STR_UPDATE][STR_URL] = "https://github.com/SarahAlroe/FlyingChecklist/releases/latest/download/FlyingChecklist.bin";
 
     // Save new default config to file through buffer
     File configFile = FFat.open(FILENAME_CONFIG, FILE_WRITE, true);
