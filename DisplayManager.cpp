@@ -615,6 +615,12 @@ void DisplayManager::prepareNoteField(int16_t noteNumber, bool crossIfChecked) {
     uint32_t noteTextLength = noteText.length();
     uint8_t checkLineThickness = getNoteLineThicknessFromLength(noteTextLength);
     uint8_t noteTextSize = getNoteTextSizeFromLength(noteTextLength);
+    uint16_t maxTextLength = getMaxTextLengthFromSize(noteTextSize);
+    if (noteTextLength > maxTextLength){
+      noteText = noteText.substring(0, maxTextLength - 3);
+      noteText += "...";
+      noteTextLength = noteText.length();
+    }
     
     noteField.setTextSize(noteTextSize); 
     noteField.print(noteText);
@@ -652,6 +658,21 @@ uint8_t DisplayManager::getNoteTextSizeFromLength(uint32_t length){
     targetSize = 1;
   }
   return (max( targetSize, systemConfig.minTextSize));
+}
+
+uint16_t DisplayManager::getMaxTextLengthFromSize(uint8_t textSize){
+  switch(textSize){
+    case 1:
+      return 216;
+    case 2:
+      return 54;
+    case 3:
+      return 24;
+    case 4:
+    case 5:
+    case 6:
+      return 6;
+  }
 }
 
 uint8_t DisplayManager::getFullscreenTextSizeFromLength(uint32_t length){
@@ -716,6 +737,7 @@ void DisplayManager::animCrossNote(int16_t noteScreenIndex, float animProgress){
     noteTextSize = getNoteTextSizeFromLength(noteTextLength);
     checkLineThickness = getNoteLineThicknessFromLength(noteTextLength);
     lastNoteNumber = noteNumber;
+    noteTextLength = min(noteTextLength, (uint32_t)getMaxTextLengthFromSize(noteTextSize));
   }
 
   // Copy note field to position

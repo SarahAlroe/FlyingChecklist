@@ -89,6 +89,7 @@ private:
     uint8_t getNoteTextSizeFromLength(uint32_t length);
     uint8_t getNoteLineThicknessFromLength(uint32_t length);
     uint8_t getFullscreenTextSizeFromLength(uint32_t length);
+    uint16_t getMaxTextLengthFromSize(uint8_t textSize);
     static unsigned char reverseByte(unsigned char b)
     {
         b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
