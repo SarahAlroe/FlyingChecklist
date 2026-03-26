@@ -97,6 +97,7 @@ RTC_DATA_ATTR time_t lastNTPTimestmp = 0;           // Used to know if system ti
 RTC_DATA_ATTR time_t lastCronTimestamp = 0;         // Used for firing cron events only once
 RTC_DATA_ATTR time_t nextCronEvent = 0;             // Used for firing cron events only once
 RTC_DATA_ATTR time_t nextTranscriptionAttempt = 0;  // Used for firing cron events only once
+RTC_DATA_ATTR time_t nextBLECheckin = 0;
 RTC_DATA_ATTR int8_t notebookIndex = 0;             // Current notebook on screen
 RTC_DATA_ATTR int16_t notesIndex = 0;               // Current scrolll index in selected book
 RTC_DATA_ATTR bool freshBoot = true;                // Is this a fresh boot? Is false on wake from sleep
@@ -863,7 +864,7 @@ void transcribeMessagesTask(void *pvParameters) {
     }
     updateBatteryPercentage();
 
-    if(hasBLE){ //TODO Only if something to do or at long interval or powered
+    if(hasBLE && (time(NULL) < ANCIENT_TIME || status.filesWaiting || nextBLECheckin<time(NULL)) ){
       beginBLE();
       bleCompanionServer.setBattery(status.battery);
     }
@@ -873,7 +874,7 @@ void transcribeMessagesTask(void *pvParameters) {
         && (lastNTPTimestmp == 0 || (lastNTPTimestmp + 1800) < time(NULL))) {  // But only if first time this boot, or 30 mins since last attempt
       if(hasWifi){
         getNTPOverWifi();
-      }else if(hasBLE){
+      }else if(status.ble){
         while (time(NULL) < ANCIENT_TIME && millis() < 20 * MS_TO_S_FACTOR){
           delay(10);
         }
@@ -893,13 +894,13 @@ void transcribeMessagesTask(void *pvParameters) {
       }
 
       hasRecordingsToProcess(); //TODO fix
-      if (hasBLE && status.filesWaiting){ // TODO or other motivations...
+      if (status.ble && status.filesWaiting){
         uint32_t startTime = millis();
         ESP_LOGI(TAG, "Serving files over BLE");
         bleCompanionServer.hasFilesPending();
         while (bleCompanionServer.serveFiles()) {
           delay(5);
-          if (millis() - startTime > 6 * MS_TO_MIN_FACTOR ) {
+          if (millis() - startTime > 2 * MS_TO_MIN_FACTOR ) {
             ESP_LOGW(TAG, "BLE file serving hit watchdog timeout");
             break;
           }
@@ -919,9 +920,14 @@ void transcribeMessagesTask(void *pvParameters) {
 
     ESP_LOGI(TAG, "Has responses waiting: %d", status.responsesWaiting);
     uint32_t responseStartTime = millis();
-    while(hasBLE && status.responsesWaiting && (millis() - responseStartTime) < (1 * MS_TO_MIN_FACTOR) ){
+    while(status.ble && status.responsesWaiting && (millis() - responseStartTime) < (10 * MS_TO_S_FACTOR) ){
       bleCompanionServer.serveFiles();
       delay(10);
+    }
+
+    if (status.responsesWaiting) {
+      // If still has responses waiting, wake again in 10 minutes
+      nextTranscriptionAttempt = time(NULL) + 10 * S_TO_MIN_FACTOR;
     }
 
     disconnectWifi();
