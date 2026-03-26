@@ -51,6 +51,10 @@ String NotesManager::replaceCommonUnicode(String text) {
   ms.GlobalReplace("å", charReplacement);
   charReplacement[0] = 0x8F;
   ms.GlobalReplace("Å", charReplacement);
+  charReplacement[0] = 0x82;
+  ms.GlobalReplace("é", charReplacement);
+  charReplacement[0] = 0x90;
+  ms.GlobalReplace("É", charReplacement);
   ESP_LOGV(TAG, "Revised text '%s' as '%s'.", captionBuffer, text.c_str());
   return String(captionBuffer);
 }
