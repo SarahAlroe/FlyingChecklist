@@ -472,14 +472,15 @@ void ulp_setup() {
 
   const ulp_insn_t ulp_prog[] = {
     I_WR_REG(RTC_GPIO_OUT_REG, PIN_SHARP_EXTCOM + RTC_GPIO_OUT_DATA_S, PIN_SHARP_EXTCOM + RTC_GPIO_OUT_DATA_S, 1),  // Turn the pin on
-    //I_DELAY(0x445C), // 1ms is visible on LED
     I_DELAY(0xFF),                                                                                                  // Datasheet says pulse of 1us+. 17.5MHz * 1 us = 17.5 cycles. We give it 255 for good measure
     I_WR_REG(RTC_GPIO_OUT_REG, PIN_SHARP_EXTCOM + RTC_GPIO_OUT_DATA_S, PIN_SHARP_EXTCOM + RTC_GPIO_OUT_DATA_S, 0),  // Turn the pin back off
     I_MOVI(R1, ULP_ADDR_LED_FB),         // R1 <- 32
     I_LD(R1, R1, 0),        // R1 <- RTC_SLOW_MEM[R1]
     M_BL(1, 1), // if less than 1 (0), skip LED blink
     I_WR_REG(RTC_GPIO_OUT_REG, PIN_OUT_LED + RTC_GPIO_OUT_DATA_S, PIN_OUT_LED + RTC_GPIO_OUT_DATA_S, 1),  // Turn the pin on
-    I_DELAY(0x2AB98), // 10ms is visible on LED
+    I_DELAY(0xCD14), // Three to not overflow 16 bit uint
+    I_DELAY(0xCD14),
+    I_DELAY(0xCD14), // 9ms is properly visible on LED
     I_WR_REG(RTC_GPIO_OUT_REG, PIN_OUT_LED + RTC_GPIO_OUT_DATA_S, PIN_OUT_LED + RTC_GPIO_OUT_DATA_S, 0),  // Turn the pin back off
     M_LABEL(1),
     I_HALT(),                                                                                                       // Halt program
@@ -638,17 +639,19 @@ void handleArrayButton(uint8_t pressedArrayButton){
     return;
   }
   if (pressedArrayButton == 0 && notes.canScrollUp()) {
-    while (digitalRead(PIN_SW_0) == HIGH) {
+    do {
       notes.scrollUp();
       delay(2);
-    }
+      }
+    while (digitalRead(PIN_SW_0) == HIGH);
     return;
   }
   if (pressedArrayButton == 5 && notes.canScrollDown()) {
-    while (digitalRead(PIN_SW_5) == HIGH) {
+    do {
       notes.scrollDown();
       delay(2);
     }
+    while (digitalRead(PIN_SW_5) == HIGH);
     return;
   }
   if (notes.hasNoteAtDot(pressedArrayButton)) {
