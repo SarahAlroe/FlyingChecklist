@@ -697,6 +697,9 @@ bool aButtonIsHeld(){
 void shiftNotesRelative(int8_t shift) {
   int8_t newNotebookIndex = notebookIndex + shift;
   int8_t numNotebooks = systemConfiguration[STR_LISTS].size();
+  if (numNotebooks <= 1){ //If there is only one page, it makes no sense to flip between it.
+    return;
+  }
 
   // Wrap around to be existing index
   while (newNotebookIndex < 0) {
