@@ -43,7 +43,6 @@ public:
     parent->deviceConnected = false;
     parent->deviceWasConnected = true;
     ESP_LOGI(TAG, "Device disconnected");
-    parent->startAdvertising();
   }
   /*void onMtuChanged(BLEServer* pServer, ble_gap_conn_desc *desc, uint16_t mtu) override {
         parent->chunkSize = mtu - 3; // 3 bytes for ATT header
@@ -117,6 +116,7 @@ void BLECompanionServer::begin(fs::FS& fsRef, void (*newItemCB)(ListItemToAdd, b
   BLEDevice::init("Checklist");
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new BLECompanionServerServerCallbacks(this));
+  pServer->advertiseOnDisconnect(true);
 
   // File transfer service and characteristics
   BLEService* pFileService = pServer->createService(FILE_SERVICE_UUID);
@@ -162,15 +162,11 @@ void BLECompanionServer::begin(fs::FS& fsRef, void (*newItemCB)(ListItemToAdd, b
   //pAdvertising->setScanResponse(false);
   //pAdvertising->setMinPreferred(0x0);  // set value to 0x00 to not advertise this parameter
   setBattery(status.battery);
-  BLEDevice::startAdvertising();
   if (hasFilesPending()) {
     prepareNextFile();
   }
+  BLEDevice::startAdvertising();
   companionServerLoaded = true;
-}
-
-void BLECompanionServer::startAdvertising(){
-  pServer->startAdvertising();
 }
 
 void BLECompanionServer::setBattery(uint8_t battery) {

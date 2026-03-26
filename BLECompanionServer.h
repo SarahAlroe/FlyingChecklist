@@ -18,7 +18,6 @@ class BLECompanionServer {
         bool deviceWasConnected = false;
         void onCommand(uint8_t * command);
         void setBattery(uint8_t batteryLevel = 0);
-        void startAdvertising();
         bool hasFilesPending();
         void onData(String data);
         
