@@ -316,6 +316,10 @@ void debugMenu() {
         ESP_LOGV(TAG, "Cert: %s", cert);
         client.setCACert(cert);
         client.setTimeout(12000);
+        httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+        // Note: Following redirects require certs for all connections.
+        // For github, this means certs for both github.com and release-assets.githubusercontent.com
+        // Multiple certs can exist in the same file.
         t_httpUpdate_return ret = httpUpdate.update(client, systemConfiguration[STR_UPDATE][STR_URL]);
         switch (ret) {
           case HTTP_UPDATE_FAILED:
