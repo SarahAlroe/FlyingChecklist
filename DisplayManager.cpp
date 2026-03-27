@@ -672,11 +672,8 @@ uint16_t DisplayManager::getMaxTextLengthFromSize(uint8_t textSize){
     case 2:
       return 54;
     case 3:
+    default:
       return 24;
-    case 4:
-    case 5:
-    case 6:
-      return 6;
   }
 }
 
