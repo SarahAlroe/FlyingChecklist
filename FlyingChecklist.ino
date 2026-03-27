@@ -252,34 +252,29 @@ void debugMenu() {
   sharpDisplay.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, WHITE);
   sharpDisplay.setCursor(0, 0);
   sharpDisplay.println("DEBUG MENU");
-  sharpDisplay.println("Be warned: There will be no confirmation");
-  sharpDisplay.println("If unsure, press the upper left button");
+  sharpDisplay.println("If unsure, press the upper of the six list buttons.");
   sharpDisplay.println("");
-  sharpDisplay.println("1: Exit");
-  sharpDisplay.println("2: Reboot");
-  sharpDisplay.println("3: Update from /update.bin");
-  sharpDisplay.println("4: FW update from server");
-  sharpDisplay.println("5: Cert update from server");
+  sharpDisplay.println("1: Exit and Reboot");
+  sharpDisplay.println("2: Update from /update.bin");
+  sharpDisplay.println("3: FW update from server");
+  sharpDisplay.println("4: N/A");
+  sharpDisplay.println("5: N/A");
   sharpDisplay.println("6: Factory reset");
   sharpDisplay.println("");
-  sharpDisplay.println("Please leave plugged into power while in debug");
+  sharpDisplay.println("Please leave plugged into power while in debug mode");
   sharpDisplay.refresh();
 
   // Avoid accidental mispress
-  while (digitalRead(PIN_SW_LEFT) || digitalRead(PIN_SW_RIGHT)) {
+  while (aButtonIsHeld()) {
     delay(10);
   }
 
   while (true) {
     if (digitalRead(PIN_SW_0)) {
-      // Exit
-      return;
-    }
-    if (digitalRead(PIN_SW_1)) {
       // Reboot
       ESP.restart();
     }
-    if (digitalRead(PIN_SW_2)) {
+    if (digitalRead(PIN_SW_1)) {
       // Update from FS
       sharpDisplay.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, WHITE);
       sharpDisplay.setCursor(0, 0);
@@ -295,7 +290,7 @@ void debugMenu() {
       delay(4000);
       ESP.restart();
     }
-    if (digitalRead(PIN_SW_3)) {
+    if (digitalRead(PIN_SW_2)) {
       // Update from server
       sharpDisplay.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, WHITE);
       sharpDisplay.setCursor(0, 0);
@@ -345,14 +340,34 @@ void debugMenu() {
       delay(6000);
       ESP.restart();
     }
+    if (digitalRead(PIN_SW_3)) {
+      return;
+    }
     if (digitalRead(PIN_SW_4)) {
-      // Download new certs TODO
-      ESP.restart();
+      return;
     }
     if (digitalRead(PIN_SW_5)) {
       // Factory reset
-      FFat.format(FFAT_WIPE_FULL);
-      ESP.restart();
+      sharpDisplay.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, WHITE);
+      sharpDisplay.setCursor(0, 0);
+      sharpDisplay.println("Are you sure you want to factory reset the device?");
+      sharpDisplay.println("1: No, exit.");
+      sharpDisplay.println("2: Yes, continue.");
+      sharpDisplay.refresh();
+      // Avoid accidental mispress
+      while (aButtonIsHeld()) {
+        delay(10);
+      }
+      while (true) {
+        if (digitalRead(PIN_SW_0)) {
+          ESP.restart();
+        }
+        if (digitalRead(PIN_SW_1)) {
+          FFat.format(FFAT_WIPE_FULL);
+          ESP.restart();
+        }
+        delay(10);
+      }
     }
     delay(10);
   }
