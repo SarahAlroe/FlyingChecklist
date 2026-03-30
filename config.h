@@ -4,6 +4,7 @@
 #define BUTTON_PIN_BITMASK(GPIO) (1ULL << GPIO)  // for deep sleep wakeup config
 #define uS_TO_S_FACTOR 1000000ULL
 #define S_TO_MIN_FACTOR 60ULL
+#define S_TO_H_FACTOR 3600ULL
 #define MS_TO_S_FACTOR 1000ULL
 #define MS_TO_MIN_FACTOR 60000ULL
 #define uS_TO_MIN_FACTOR 60000000ULL

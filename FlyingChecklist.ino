@@ -215,6 +215,9 @@ void setup(void) {
   } else if (wakeupPin == PIN_SL_1) {
     // If deliberately wake by unlock, let attempt transcribing files again.
     nextTranscriptionAttempt = 0;
+    if (digitalRead(PIN_SW_LEFT)){
+      takeScreenshot();
+    }
   } else if (wakeupPin == PIN_SW_0) {
     handleArrayButton(0);
   }  else if (wakeupPin == PIN_SW_1) {
@@ -449,6 +452,46 @@ void loop(void) {
   }
 
   delay(2);
+}
+
+void takeScreenshot(){
+  uint8_t * body = sharpDisplay.getBuffer();
+  size_t bufferSize = (sharpDisplay.width() * sharpDisplay.height())/8;
+  unsigned char header[146] =
+  {
+    0x42, 0x4d, 0x52, 0x31, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x92, 0x00, 0x00, 0x00, 0x7c, 0x00, 
+    0x00, 0x00, 0x90, 0x01, 0x00, 0x00, 0xf0, 0x00, 
+    0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0xc0, 0x30, 0x00, 0x00, 0x23, 0x2e, 
+    0x00, 0x00, 0x23, 0x2e, 0x00, 0x00, 0x02, 0x00, 
+    0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xff, 0x00, 0x00, 0xff, 0x00, 0x00, 0xff, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x42, 0x47, 
+    0x52, 0x73, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 
+    0xff, 0x00, 
+  };
+  struct tm timeinfo;
+  getLocalTime(&timeinfo);
+  String hour = (timeinfo.tm_hour < 10 ? "0" : "") + String(timeinfo.tm_hour);
+  String minute = (timeinfo.tm_min < 10 ? "0" : "") + String(timeinfo.tm_min);
+  String second = (timeinfo.tm_sec < 10 ? "0" : "") + String(timeinfo.tm_sec);
+  String path = "/screenshot-" + hour + "-" + minute + "-" + second + ".bmp";
+  File file = FFat.open(path.c_str(), FILE_WRITE);
+  ESP_LOGI(TAG,"Opened file %s for writing", path.c_str());
+
+  file.write(header, 146);
+  file.write(body, bufferSize);
+
+  file.close();
 }
 
 void asyncPlayVibrationFeedback(void *pvParameters) {
@@ -886,6 +929,7 @@ void transcribeMessagesTask(void *pvParameters) {
     if(hasBLE && (time(NULL) < ANCIENT_TIME || status.filesWaiting || nextBLECheckin<time(NULL)) ){
       beginBLE();
       bleCompanionServer.setBattery(status.battery);
+      nextBLECheckin = time(NULL) + 24*S_TO_H_FACTOR; // Check in with BLE every day if not doing other things. //TODO Extract to config
     }
 
     // Update time if not synced
@@ -1227,7 +1271,13 @@ void goToSleep() {
     ESP_LOGV(TAG, "Next cron event at %ld, in %ld seconds", nextCronEvent, nextCronEvent - currentTime + 10);
     nextWakeup = min(nextWakeup, (nextCronEvent - currentTime + 10) * uS_TO_S_FACTOR);
   }
-  // If there are unprocessed recordings, wake up periodically to see if transcription is possible
+  if (nextBLECheckin != 0) {
+    // Or if we wanna checkin with BLE later
+    ESP_LOGV(TAG, "Next BLE checkin at %ld, in %ld seconds", nextBLECheckin, nextBLECheckin - currentTime + 10);
+    nextWakeup = min(nextWakeup, (nextBLECheckin - currentTime + 10) * uS_TO_S_FACTOR);
+  }
+
+  // If there are activities happening in the future, wake up then.
   if (nextWakeup != UINT64_MAX) {
     ESP_LOGV(TAG, "Enabling timer wakeup in %ld microseconds", nextWakeup);
     esp_sleep_enable_timer_wakeup(nextWakeup);
