@@ -1056,6 +1056,9 @@ void DisplayManager::animFullscreenNoteIn(int16_t noteScreenIndex){
 }
 
 void DisplayManager::animFullscreenNoteOut(){
+  if(fullscreenNoteNumber == -1){
+    return;
+  }
   // Save target layout to buffer
   redrawDisplay(false);
   memmove(

@@ -394,6 +394,9 @@ void loop(void) {
   // TODO: Less fragile way of passing messages.
   if (itemToAdd.text != "") {
     setCPUFreq(240);
+    if (display.isFullscreenNote()){
+      display.animFullscreenNoteOut(); // If note is currently full-screened, minimize it before adding new note.
+    }
     if (itemToAdd.listIndex == notebookIndex) {
       notes.addNewNote(itemToAdd.text, itemToAdd.isSingular);
       notes.save();
@@ -447,7 +450,9 @@ void loop(void) {
   if (millis() > whenToSleep && !status.charging && status.processes <= 0 && itemToAdd.text == "") {
     // If nothing has happened a while, and we're not powered
     setCPUFreq(240);
-    notes.cleanupNotes();
+    if(!display.isFullscreenNote()){
+      notes.cleanupNotes(); // Clean up only if not fullscreen.
+    }
     goToSleep();
   }
 
