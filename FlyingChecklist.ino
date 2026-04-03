@@ -67,7 +67,7 @@ Whisper whisper;      // Transcription service
 Dictaphone dictaphone(PIN_MIC_CLK, PIN_MIC_DATA);
 JsonDocument systemConfiguration;
 RTC_DATA_ATTR SystemStatus status;  // Keeps system status
-SystemStatus statusMonitor;         // For monitoring changes to trigger screen updartes
+RTC_DATA_ATTR SystemStatus statusMonitor;         // For monitoring changes to trigger screen updartes
 SystemConfig systemConfig;
 BLECompanionServer bleCompanionServer(status);
 
@@ -1229,37 +1229,33 @@ void goToSleep() {
   rtc_gpio_pullup_dis((gpio_num_t)PIN_IN_POWERED);
   rtc_gpio_pulldown_dis((gpio_num_t)PIN_IN_POWERED);
 
-  /* // Outcommented to enable flashing lock icon on locked button press.
+  rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_LEFT);
+  rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_RIGHT);
+  rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_0);
+  rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_1);
+  rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_2);
+  rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_3);
+  rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_4);
+  rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_5);
+
+  rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_LEFT);
+  rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_RIGHT);
+  rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_0);
+  rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_1);
+  rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_2);
+  rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_3);
+  rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_4);
+  rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_5);
+
   if (status.locked) {
-    // If locked, only wake on unlock
     esp_sleep_enable_ext1_wakeup_io(
-      BUTTON_PIN_BITMASK(PIN_SL_1) | BUTTON_PIN_BITMASK(PIN_IN_POWERED),
+      BUTTON_PIN_BITMASK(PIN_SL_1) | BUTTON_PIN_BITMASK(PIN_SL_2) | BUTTON_PIN_BITMASK(PIN_SW_LEFT) | BUTTON_PIN_BITMASK(PIN_SW_RIGHT) | BUTTON_PIN_BITMASK(PIN_SW_0) | BUTTON_PIN_BITMASK(PIN_SW_1) | BUTTON_PIN_BITMASK(PIN_SW_2) | BUTTON_PIN_BITMASK(PIN_SW_3) | BUTTON_PIN_BITMASK(PIN_SW_4) | BUTTON_PIN_BITMASK(PIN_SW_5) | BUTTON_PIN_BITMASK(PIN_IN_POWERED),
       ESP_EXT1_WAKEUP_ANY_HIGH);
-  } else {*/
-    // If not locked, any of the buttons will wake the device from sleep
-    rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_LEFT);
-    rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_RIGHT);
-    rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_0);
-    rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_1);
-    rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_2);
-    rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_3);
-    rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_4);
-    rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_5);
-
-    rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_LEFT);
-    rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_RIGHT);
-    rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_0);
-    rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_1);
-    rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_2);
-    rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_3);
-    rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_4);
-    rtc_gpio_pulldown_en((gpio_num_t)PIN_SW_5);
-
+  } else {
     esp_sleep_enable_ext1_wakeup_io(
-      BUTTON_PIN_BITMASK(PIN_SL_0) |  // Wake when locked to sleep immediately. Does not work without internal pullup
-        BUTTON_PIN_BITMASK(PIN_SL_2) | BUTTON_PIN_BITMASK(PIN_SW_LEFT) | BUTTON_PIN_BITMASK(PIN_SW_RIGHT) | BUTTON_PIN_BITMASK(PIN_SW_0) | BUTTON_PIN_BITMASK(PIN_SW_1) | BUTTON_PIN_BITMASK(PIN_SW_2) | BUTTON_PIN_BITMASK(PIN_SW_3) | BUTTON_PIN_BITMASK(PIN_SW_4) | BUTTON_PIN_BITMASK(PIN_SW_5) | BUTTON_PIN_BITMASK(PIN_IN_POWERED),
+      BUTTON_PIN_BITMASK(PIN_SL_0) | BUTTON_PIN_BITMASK(PIN_SL_2) | BUTTON_PIN_BITMASK(PIN_SW_LEFT) | BUTTON_PIN_BITMASK(PIN_SW_RIGHT) | BUTTON_PIN_BITMASK(PIN_SW_0) | BUTTON_PIN_BITMASK(PIN_SW_1) | BUTTON_PIN_BITMASK(PIN_SW_2) | BUTTON_PIN_BITMASK(PIN_SW_3) | BUTTON_PIN_BITMASK(PIN_SW_4) | BUTTON_PIN_BITMASK(PIN_SW_5) | BUTTON_PIN_BITMASK(PIN_IN_POWERED),
       ESP_EXT1_WAKEUP_ANY_HIGH);
-//  }
+  }
 
   bool hasUIClock = systemConfiguration[STR_UI][STR_SHOW_CLOCK];
   uint64_t clockUpdateTimer = systemConfiguration[STR_UI][STR_CLOCK_UPDATE_MIN];
