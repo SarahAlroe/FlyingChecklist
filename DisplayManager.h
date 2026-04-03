@@ -42,8 +42,8 @@ public:
     void closeSpaceAt(int16_t noteIndex);
     int16_t scrollToNoteIndex(int16_t toIndex, int8_t allowedPastBorders = 0, int16_t freezeIndex = -1);
     bool indexIsOnScreen(int16_t noteIndex);
-    void clearToLargeIcon(uint8_t icon, bool animate = true);
-    void redrawFromLargeIcon(uint8_t icon);
+    void clearToLargeIcon(uint8_t icon, bool animate = true, unsigned long animLength = 2*SLIDE_TIME);
+    void redrawFromLargeIcon(uint8_t icon, unsigned long animLength = 2*SLIDE_TIME);
     void delayDots();
     void drawLargeTimer(uint16_t seconds);
     void animFullscreenNoteIn(int16_t noteScreenIndex);
@@ -51,6 +51,7 @@ public:
     bool isFullscreenNote();
     void animLock();
     void animUnlock();
+    void flashLock();
 
 private:
     const char* TAG = "DisplayManager";

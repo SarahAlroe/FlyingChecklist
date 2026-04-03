@@ -216,8 +216,7 @@ void setup(void) {
     }
   } else if (status.locked && (wakeupPin == PIN_SW_LEFT || wakeupPin == PIN_SW_RIGHT || wakeupPin == PIN_SW_0 || wakeupPin == PIN_SW_1 || wakeupPin == PIN_SW_2 || wakeupPin == PIN_SW_3 || wakeupPin == PIN_SW_4 || wakeupPin == PIN_SW_5) ){
     // Locked and a button was pressed. Flash locked icon, then sleep
-    display.clearToLargeIcon(ICON_LOCK);
-    display.redrawFromLargeIcon(ICON_LOCK);
+    display.flashLock();
     goToSleep();
   } else if (wakeupPin == PIN_SW_LEFT) {
     shiftNotesRelative(-1);
@@ -387,12 +386,10 @@ void loop(void) {
   status.charging = digitalRead(PIN_IN_POWERED);
   dictaphone.warmup();  // Keep the microphone running to avoid odd recording drift.
 
-  // If not locked, check button and slider inputs and respond accordingly
-  if (!status.locked) {
-    if (checkListButtons()) {
-      // If a button has been interacted with, keep awake for longer
-      whenToSleep = millis() + sleepIncrement;
-    }
+  // Check button and slider inputs and respond accordingly
+  if (checkListButtons()) {
+    // If a button has been interacted with, keep awake for longer
+    whenToSleep = millis() + sleepIncrement;
   }
 
   // If a message has been transcribed, add it
@@ -663,6 +660,10 @@ bool checkListButtons() {
 
   if (digitalRead(PIN_SW_LEFT) == HIGH) {
     setCPUFreq(240);
+    if (status.locked){ // If locked, anim and do nothing
+      display.flashLock();
+      return false;
+    }
     while (digitalRead(PIN_SW_LEFT) == HIGH) {
       shiftNotesRelative(-1);
       // A short cancelleable delay before repeating shift
@@ -676,6 +677,10 @@ bool checkListButtons() {
 
   if (digitalRead(PIN_SW_RIGHT) == HIGH) {
     setCPUFreq(240);
+    if (status.locked){ // If locked, anim and do nothing
+      display.flashLock();
+      return false;
+    }
     while (digitalRead(PIN_SW_RIGHT) == HIGH) {
       shiftNotesRelative(1);
       // A short cancelleable delay before repeating shift
@@ -694,6 +699,10 @@ bool checkListButtons() {
     }
   }
   if (pressedArrayButton != -1) {
+    if (status.locked){ // If locked, anim and do nothing
+      display.flashLock();
+      return false;
+    }
     ESP_LOGV(TAG, "Scanned buttons, got %d pressed", pressedArrayButton);
     setCPUFreq(240);
     handleArrayButton(pressedArrayButton);

@@ -1000,13 +1000,13 @@ int16_t DisplayManager::scrollToNoteIndex(int16_t reqIndex, int8_t allowedPastBo
   //refreshNotes();
 }
 
-void DisplayManager::clearToLargeIcon(uint8_t icon, bool animate) {
+void DisplayManager::clearToLargeIcon(uint8_t icon, bool animate, unsigned long animLength) {
   if (animate){
   unsigned long startTime = millis();
-  unsigned long endTime = startTime + SLIDE_TIME*2;
+  unsigned long endTime = startTime + animLength;
   while (millis() < endTime) {
     unsigned long deltaTime = millis() - startTime;
-    float animProgress = ((float)deltaTime) / ((float)SLIDE_TIME*2);
+    float animProgress = ((float)deltaTime) / ((float)animLength);
     float animProgressEased = easeInOut(animProgress);
     unsigned int radius = (unsigned int)ceil(animProgressEased * (float)(234)); //Hypotenuse
     display.fillCircle(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, radius, WHITE);
@@ -1022,15 +1022,15 @@ void DisplayManager::clearToLargeIcon(uint8_t icon, bool animate) {
   display.refresh();
 }
 
-void DisplayManager::redrawFromLargeIcon(uint8_t icon) {
+void DisplayManager::redrawFromLargeIcon(uint8_t icon, unsigned long animLength) {
   // Draw clean display and move to buffer
   redrawDisplay(false);
   memmove(offScreen.getBuffer(), display.getBuffer(), (SCREEN_HEIGHT * SCREEN_WIDTH) / 8 );
   unsigned long startTime = millis();
-  unsigned long endTime = startTime + SLIDE_TIME*2;
+  unsigned long endTime = startTime + animLength;
   while (millis() < endTime) {
     unsigned long deltaTime = millis() - startTime;
-    float animProgress = ((float)deltaTime) / ((float)SLIDE_TIME*2);
+    float animProgress = ((float)deltaTime) / ((float)animLength);
     float animProgressEased = 1.0 - easeInOut(animProgress);
     unsigned int radius = (unsigned int)ceil(animProgressEased * (float)(234)); //Hypotenuse
     memmove(display.getBuffer(), offScreen.getBuffer(), (SCREEN_HEIGHT * SCREEN_WIDTH) / 8 ); // Target display
@@ -1284,4 +1284,8 @@ void DisplayManager::animUnlock(){
   clearToLargeIcon(ICON_UNLOCK, false);
   delay(100);
   redrawFromLargeIcon(ICON_UNLOCK);
+}
+void DisplayManager::flashLock(){
+  clearToLargeIcon(ICON_LOCK, true, SLIDE_TIME);
+  redrawFromLargeIcon(ICON_LOCK, SLIDE_TIME);
 }
