@@ -12,6 +12,8 @@
 #define ICON_USB 0
 #define ICON_MIC 1
 #define ICON_SAVE 2
+#define ICON_LOCK 3 //TODO enum
+#define ICON_UNLOCK 4
 
 enum horizontal_alignment_t { ALIGN_LEFT, ALIGN_MID, ALIGN_RIGHT };
 
@@ -47,6 +49,8 @@ public:
     void animFullscreenNoteIn(int16_t noteScreenIndex);
     void animFullscreenNoteOut();
     bool isFullscreenNote();
+    void animLock();
+    void animUnlock();
 
 private:
     const char* TAG = "DisplayManager";

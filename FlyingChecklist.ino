@@ -208,19 +208,24 @@ void setup(void) {
   whenToSleep = millis() + sleepIncrement;  // Keep us awake for a while longer after initial boot
 
   uint8_t wakeupPin = getWakeupPin();
-  if (wakeupPin == PIN_SW_LEFT) {
-    shiftNotesRelative(-1);
-  } else if (wakeupPin == PIN_SW_RIGHT) {
-    shiftNotesRelative(1);
-  } else if (wakeupPin == PIN_SL_1) {
+  if (wakeupPin == PIN_SL_1) {
     // If deliberately wake by unlock, let attempt transcribing files again.
     nextTranscriptionAttempt = 0;
     if (digitalRead(PIN_SW_LEFT)){
       takeScreenshot();
     }
+  } else if (status.locked && (wakeupPin == PIN_SW_LEFT || wakeupPin == PIN_SW_RIGHT || wakeupPin == PIN_SW_0 || wakeupPin == PIN_SW_1 || wakeupPin == PIN_SW_2 || wakeupPin == PIN_SW_3 || wakeupPin == PIN_SW_4 || wakeupPin == PIN_SW_5) ){
+    // Locked and a button was pressed. Flash locked icon, then sleep
+    display.clearToLargeIcon(ICON_LOCK);
+    display.redrawFromLargeIcon(ICON_LOCK);
+    goToSleep();
+  } else if (wakeupPin == PIN_SW_LEFT) {
+    shiftNotesRelative(-1);
+  } else if (wakeupPin == PIN_SW_RIGHT) {
+    shiftNotesRelative(1);
   } else if (wakeupPin == PIN_SW_0) {
     handleArrayButton(0);
-  }  else if (wakeupPin == PIN_SW_1) {
+  } else if (wakeupPin == PIN_SW_1) {
     handleArrayButton(1);
   } else if (wakeupPin == PIN_SW_2) {
     handleArrayButton(2);
@@ -427,17 +432,21 @@ void loop(void) {
   if (status != statusMonitor) {
     setCPUFreq(240);
     if (status.locked && !statusMonitor.locked) {
+      display.animLock(); // Make locking animation
       // If the notebook has just been locked, clean up notes
       if(!display.isFullscreenNote()){
         notes.cleanupNotes(); // Clean up only if not fullscreen.
       }
       notes.save();  // Save notes after sorting, as some time may pass before sleep save (for power loss or crash)
+    } else if (!status.locked && statusMonitor.locked){
+      // If has just been unlocked, animate unlock
+      display.animUnlock();
     }
     if (status.wifi && !statusMonitor.wifi) {
-      // Connecting to wifi tends to corrupt screen. Redraw to minimize effect
+      // Connecting to wifi tends to corrupt screen. Redraw entire screen to minimize effect
       display.redrawDisplay();
     } else {
-      display.updateHeader();  // Update the header as soon as status changes (if not the entire screen)
+      display.updateHeader();  // Otherwise just update the header with new changes
     }
     statusMonitor = status;
   }
@@ -1220,12 +1229,13 @@ void goToSleep() {
   rtc_gpio_pullup_dis((gpio_num_t)PIN_IN_POWERED);
   rtc_gpio_pulldown_dis((gpio_num_t)PIN_IN_POWERED);
 
+  /* // Outcommented to enable flashing lock icon on locked button press.
   if (status.locked) {
     // If locked, only wake on unlock
     esp_sleep_enable_ext1_wakeup_io(
       BUTTON_PIN_BITMASK(PIN_SL_1) | BUTTON_PIN_BITMASK(PIN_IN_POWERED),
       ESP_EXT1_WAKEUP_ANY_HIGH);
-  } else {
+  } else {*/
     // If not locked, any of the buttons will wake the device from sleep
     rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_LEFT);
     rtc_gpio_pullup_dis((gpio_num_t)PIN_SW_RIGHT);
@@ -1249,7 +1259,7 @@ void goToSleep() {
       BUTTON_PIN_BITMASK(PIN_SL_0) |  // Wake when locked to sleep immediately. Does not work without internal pullup
         BUTTON_PIN_BITMASK(PIN_SL_2) | BUTTON_PIN_BITMASK(PIN_SW_LEFT) | BUTTON_PIN_BITMASK(PIN_SW_RIGHT) | BUTTON_PIN_BITMASK(PIN_SW_0) | BUTTON_PIN_BITMASK(PIN_SW_1) | BUTTON_PIN_BITMASK(PIN_SW_2) | BUTTON_PIN_BITMASK(PIN_SW_3) | BUTTON_PIN_BITMASK(PIN_SW_4) | BUTTON_PIN_BITMASK(PIN_SW_5) | BUTTON_PIN_BITMASK(PIN_IN_POWERED),
       ESP_EXT1_WAKEUP_ANY_HIGH);
-  }
+//  }
 
   bool hasUIClock = systemConfiguration[STR_UI][STR_SHOW_CLOCK];
   uint64_t clockUpdateTimer = systemConfiguration[STR_UI][STR_CLOCK_UPDATE_MIN];
