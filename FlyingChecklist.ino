@@ -211,6 +211,7 @@ void setup(void) {
   if (wakeupPin == PIN_SL_1) {
     // If deliberately wake by unlock, let attempt transcribing files again.
     nextTranscriptionAttempt = 0;
+    nextBLECheckin = 0;
     if (digitalRead(PIN_SW_LEFT)){
       takeScreenshot();
     }
@@ -437,7 +438,7 @@ void loop(void) {
       notes.save();  // Save notes after sorting, as some time may pass before sleep save (for power loss or crash)
     } else if (!status.locked && statusMonitor.locked){
       // If has just been unlocked, animate unlock
-      display.animUnlock();
+      // display.animUnlock(); // Uncommented as it slows down interaction. TODO make configurable
     }
     if (status.wifi && !statusMonitor.wifi) {
       // Connecting to wifi tends to corrupt screen. Redraw entire screen to minimize effect
@@ -944,11 +945,13 @@ void transcribeMessagesTask(void *pvParameters) {
       vTaskDelete(NULL);
     }
     updateBatteryPercentage();
+    unsigned long minimumTimeAvailable = 0;
 
-    if(hasBLE && (time(NULL) < ANCIENT_TIME || status.filesWaiting || nextBLECheckin<time(NULL)) ){
+    if(hasBLE && (time(NULL) < ANCIENT_TIME || status.filesWaiting || status.responsesWaiting || nextBLECheckin<time(NULL)) ){
       beginBLE();
       bleCompanionServer.setBattery(status.battery);
-      nextBLECheckin = time(NULL) + 24*S_TO_H_FACTOR; // Check in with BLE every day if not doing other things. //TODO Extract to config
+      minimumTimeAvailable = millis() + 10 * MS_TO_S_FACTOR;
+      nextBLECheckin = time(NULL) + 12*S_TO_H_FACTOR; // Check in with BLE twice every day if not doing other things. //TODO Extract to config
     }
 
     // Update time if not synced
@@ -1010,6 +1013,11 @@ void transcribeMessagesTask(void *pvParameters) {
     if (status.responsesWaiting) {
       // If still has responses waiting, wake again in 10 minutes
       nextTranscriptionAttempt = time(NULL) + 10 * S_TO_MIN_FACTOR;
+    }
+
+    while(status.ble && minimumTimeAvailable > millis()){
+      // Make sure we stay online for some time to enable unexpected contact
+      delay(10);
     }
 
     disconnectWifi();
