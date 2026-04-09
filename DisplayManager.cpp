@@ -1272,18 +1272,18 @@ bool DisplayManager::isFullscreenNote() {
 
 void DisplayManager::animLock(){
   clearToLargeIcon(ICON_UNLOCK);
-  delay(100);
+  delay(50);
   clearToLargeIcon(ICON_LOCK, false);
-  delay(100);
+  delay(50);
   redrawFromLargeIcon(ICON_LOCK);
 }
 
 void DisplayManager::animUnlock(){
-  clearToLargeIcon(ICON_LOCK);
-  delay(100);
+  clearToLargeIcon(ICON_LOCK, true, SLIDE_TIME);
+  delay(50);
   clearToLargeIcon(ICON_UNLOCK, false);
-  delay(100);
-  redrawFromLargeIcon(ICON_UNLOCK);
+  delay(50);
+  redrawFromLargeIcon(ICON_UNLOCK, SLIDE_TIME);
 }
 void DisplayManager::flashLock(){
   clearToLargeIcon(ICON_LOCK, true, SLIDE_TIME);
