@@ -45,7 +45,7 @@ public:
     void clearToLargeIcon(uint8_t icon, bool animate = true, unsigned long animLength = 2*SLIDE_TIME);
     void redrawFromLargeIcon(uint8_t icon, unsigned long animLength = 2*SLIDE_TIME);
     void delayDots();
-    void drawLargeTimer(uint16_t seconds);
+    void drawLargeTimer(uint16_t seconds, uint16_t outOfSeconds);
     void animFullscreenNoteIn(int16_t noteScreenIndex);
     void animFullscreenNoteOut();
     bool isFullscreenNote();
@@ -95,6 +95,19 @@ private:
     uint8_t getNoteLineThicknessFromLength(uint32_t length);
     uint8_t getFullscreenTextSizeFromLength(uint32_t length);
     uint16_t getMaxTextLengthFromSize(uint8_t textSize);
+    static String secondsMinutesString(uint16_t seconds){
+      uint8_t minutes = seconds / 60;
+      seconds = seconds % 60;
+      String secondsString = String(seconds);
+      String minutesString = String(minutes);
+      if (secondsString.length() < 2){
+        secondsString = "0"+secondsString;
+      }
+      if (minutesString.length() < 2){
+        minutesString = "0"+minutesString;
+      }
+      return minutesString + ":" + secondsString;
+    }
     static unsigned char reverseByte(unsigned char b)
     {
         b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;

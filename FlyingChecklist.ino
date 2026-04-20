@@ -64,12 +64,12 @@ const uint32_t BLOCK_SIZE = 512;  //esp_partition_get_main_flash_sector_size();
 
 WiFiMulti WiFiMulti;  // WiFi client
 Whisper whisper;      // Transcription service
-Dictaphone dictaphone(PIN_MIC_CLK, PIN_MIC_DATA);
 JsonDocument systemConfiguration;
 RTC_DATA_ATTR SystemStatus status;  // Keeps system status
 RTC_DATA_ATTR SystemStatus statusMonitor;         // For monitoring changes to trigger screen updartes
 SystemConfig systemConfig;
 BLECompanionServer bleCompanionServer(status);
+Dictaphone dictaphone(PIN_MIC_CLK, PIN_MIC_DATA);
 
 USBMSC msc;                        // USB Mass Storage Class (MSC) object
 EspClass _flash;                   // Flash memory object
@@ -191,7 +191,7 @@ void setup(void) {
     ESP.restart();  // Reboot to reload
   }
 
-  dictaphone.begin();
+  dictaphone.begin(FFat, status);
   whisper.init(systemConfiguration[STR_WHISPER][STR_DOMAIN], systemConfiguration[STR_WHISPER][STR_PATH], systemConfiguration[STR_WHISPER][STR_MODEL], systemConfiguration[STR_WHISPER][STR_LANGUAGE], systemConfiguration[STR_WHISPER][STR_TOKEN], systemConfiguration[STR_WHISPER][STR_AUTH_TYPE]);
 
   String timeZone = systemConfiguration[STR_TIMEZONE] | "CET-1CEST,M3.5.0,M10.5.0/3";
@@ -244,7 +244,7 @@ void setup(void) {
 
   xTaskCreate(
     transcribeMessagesTask, "TranscribeNow",  // A name just for humans
-    16384,//8192,                                     // The stack size
+    16384,//8192,                                    // The stack size
     NULL,                                     // Pass reference to a variable describing the task number
     1,                                        // priority
     NULL                                      // Task handle is not used here - simply pass NULL
@@ -512,6 +512,7 @@ void asyncPlayVibrationFeedback(void *pvParameters) {
   delay(200);
   digitalWrite(PIN_OUT_FB, LOW);
   vTaskDelete(NULL);
+  ESP_LOGI(TAG, "StackHighWaterMark: %u bytes", uxTaskGetStackHighWaterMark(NULL));
 }
 
 void asyncPlayVibrationTaps(void *pvParameters) {
@@ -527,6 +528,7 @@ void asyncPlayVibrationTaps(void *pvParameters) {
     //digitalWrite(PIN_OUT_FB, LOW);
     delay(275);
   }
+  ESP_LOGI(TAG, "StackHighWaterMark: %u bytes", uxTaskGetStackHighWaterMark(NULL));
   vTaskDelete(NULL);
 }
 
@@ -841,17 +843,17 @@ void recordMessage() {
     return;
   }
   // Animate saving recording on screen
-  xTaskCreate(asyncClearToSave, "AsyncClearToSave", 2048, NULL, 1, &asyncAnimHandle);  // Show recording screen async to start recording immediately
+  //xTaskCreate(asyncClearToSave, "AsyncClearToSave", 2048, NULL, 1, &asyncAnimHandle);  // Show recording screen async to start recording immediately
   status.processes++;
   dictaphone.processRecording(0);
   ESP_LOGI(TAG, "Recording processed.");
-  dictaphone.saveRecording(FFat, String(recordingIndex) + ", ");
-  vTaskDelete(asyncAnimHandle);  // Stop save animation
+  dictaphone.saveRecording(String(recordingIndex) + ", ");
+  //vTaskDelete(asyncAnimHandle);  // Stop save animation
   nextTranscriptionAttempt = 0; // Reset transcription timer
   status.filesWaiting ++; // Has another file for sure.
   status.processes--;
   // Animate out and return
-  display.redrawFromLargeIcon(ICON_SAVE);
+  display.redrawFromLargeIcon(ICON_MIC);
   while (aButtonIsHeld()){
     delay(5);
   }
@@ -859,9 +861,11 @@ void recordMessage() {
 
 void asyncClearToMic(void *pvParameters) {
   display.clearToLargeIcon(ICON_MIC);  // Animate screen to show recording
+  uint16_t maxRecordingSeconds = dictaphone.getMaxRecordingSeconds();
   while (true) {
-    display.drawLargeTimer(dictaphone.getSecondsRecorded());
+    display.drawLargeTimer(dictaphone.getSecondsRecorded(), maxRecordingSeconds);
     delay(1000);
+    ESP_LOGI(TAG, "StackHighWaterMark: %u bytes", uxTaskGetStackHighWaterMark(NULL));
   }
 }
 
@@ -870,6 +874,7 @@ void asyncClearToSave(void *pvParameters) {
   while (true) {
     display.delayDots();
     delay(200);
+    ESP_LOGI(TAG, "StackHighWaterMark: %u bytes", uxTaskGetStackHighWaterMark(NULL));
   }
 }
 
@@ -1025,6 +1030,7 @@ void transcribeMessagesTask(void *pvParameters) {
     status.processes--;
 
     ESP_LOGI(TAG, "Current BG processes: %d", status.processes);
+    ESP_LOGI(TAG, "StackHighWaterMark: %u bytes", uxTaskGetStackHighWaterMark(NULL));
 
     delay(2000);  // Every two seconds to check while things go as planned
   }

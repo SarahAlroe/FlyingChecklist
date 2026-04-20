@@ -5,13 +5,14 @@
 #include "FS.h"
 #include "time.h"
 #include "Dictaphone.h"
-#include "config.h"
 
 Dictaphone::Dictaphone(gpio_num_t clkPin, gpio_num_t dataPin) {
   i2s.setPinsPdmRx(clkPin, dataPin);
 }
 
-bool Dictaphone::begin() {
+bool Dictaphone::begin(fs::FS &fsRef, SystemStatus &statusRef) {
+  fs = &fsRef;
+  status = &statusRef;
   // Setup i2s bus
   if (!i2s.begin(I2S_MODE_PDM_RX, RECORD_SAMPLE_RATE, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO, I2S_STD_SLOT_LEFT)) {
       ESP_LOGE(TAG,"Failed to initialize I2S bus!");
@@ -33,16 +34,18 @@ void Dictaphone::beginRecording(){
   free(wavBuffer); wavBuffer = NULL; // For safety free wavBuffer if not already done
   //Reserve large psram buffer (Always guaranteed to be clear, no memory management issues, slow rw fine as limited processing)
   
-  ESP_LOGI(TAG ,"Used PSRAM: %lu", ESP.getPsramSize() - ESP.getFreePsram());  
-  wavBuffer = (uint8_t *)ps_malloc(RECORD_MAX_SIZE);
+  ESP_LOGI(TAG ,"Used PSRAM: %lu", ESP.getPsramSize() - ESP.getFreePsram());
+  bufferSize = ESP.getFreePsram()/3;
+  wavBuffer = (uint8_t *)ps_malloc(bufferSize); //Allocate a third of available PSRAM. This will ensure we always have leftover space.
   ESP_LOGI(TAG,"Used PSRAM after allocation: %lu", ESP.getPsramSize() - ESP.getFreePsram());
   ESP_LOGI(TAG,"Buffer allocated at %p", wavBuffer);
   recordingLength = 0;
 }
 
 void Dictaphone::continueRecording(){
-  if (recordingLength < RECORD_MAX_SIZE) {
-    recordingLength += i2s.readBytes((char *)(wavBuffer + recordingLength), MILLISECOND_LENGTH * 100);  // Record 1/10 second, offset from where we recorded previously
+  size_t bytesToRecord = MILLISECOND_LENGTH * 100;
+  if ((recordingLength + bytesToRecord) <= bufferSize) {
+    recordingLength += i2s.readBytes((char *)(wavBuffer + recordingLength), bytesToRecord);  // Record 1/10 second, offset from where we recorded previously
   }
 }
 
@@ -102,28 +105,64 @@ void Dictaphone::processRecording(float limiterFactor){
   }
 }
 
-bool Dictaphone::saveRecording(fs::FS &fs, String filePrefix){
-  // Save the file
+void Dictaphone::saveRecording(String filePrefix){
+  size_t savedLength = recordingLength / SAVED_SAMPLE_INTERVAL;
+  if (SAVED_BIT_DEPTH_DIVIDE){
+    savedLength = savedLength / 2;
+  }
+  ESP_LOGI(TAG,"Will be saving %d bytes of audio data", savedLength);
+
+  //Reallocate to smaller size buffer
+  saveBuffer = (uint8_t *)ps_realloc(wavBuffer, savedLength);
+  if (saveBuffer == NULL){
+    ESP_LOGE(TAG,"Failed to reallocate buffer!");
+    free(wavBuffer); wavBuffer = NULL;
+    return;
+  }
+  wavBuffer = NULL;
+  saveBufferSize = savedLength;
+  savePrefix = filePrefix;
+  ESP_LOGI(TAG,"Saving buffer %p of length %d with prefix %s", (void *)saveBuffer, saveBufferSize, savePrefix.c_str());
+
+  status->processes ++;
+  xTaskCreate(this->startAsyncSaveRecording, "AsyncSaveRec", 4096, this, 1, NULL);
+}
+
+void Dictaphone::startAsyncSaveRecording(void* _this){
+  ESP_LOGI("STATIC", "Async save thread started");
+  ((Dictaphone*)_this)->asyncSaveRecording();
+  ((Dictaphone*)_this)->status->processes --;
+  vTaskDelete(NULL);
+}
+
+void Dictaphone::asyncSaveRecording(){
+  // Local copies of pointers etc to avoid overwriting
+  uint8_t * localSaveBuffer = saveBuffer;
+  size_t localSaveBufferSize = saveBufferSize;
+  String localSavePrefix = savePrefix;
+
+  ESP_LOGI(TAG,"Saving buffer %p of length %d with prefix %s", (void *)localSaveBuffer, localSaveBufferSize, localSavePrefix.c_str());
+
+  if (localSaveBuffer == NULL){
+    return;
+  }
+
+  //File name
   struct tm timeinfo;
   getLocalTime(&timeinfo);
   String hour = (timeinfo.tm_hour < 10 ? "0" : "") + String(timeinfo.tm_hour);
   String minute = (timeinfo.tm_min < 10 ? "0" : "") + String(timeinfo.tm_min);
   String second = (timeinfo.tm_sec < 10 ? "0" : "") + String(timeinfo.tm_sec);
-  String path = DIRNAME_RECORDINGS "/" + filePrefix + hour + "-" + minute + "-" + second + ".wav";
-  String tmpPath = FILENAME_TMP_WAV;
-  File file = fs.open(tmpPath.c_str(), FILE_WRITE); // Use a temporary path while writing
+  String tmpPath = FILENAME_TMP_PREFIX + minute + second + FILE_WAV_EXTENSION;
+  String path = DIRNAME_RECORDINGS "/" + localSavePrefix + hour + "-" + minute + "-" + second + FILE_WAV_EXTENSION;
+  ESP_LOGI(TAG,"Temporary path: %s Final path: %s", tmpPath.c_str(), path.c_str());
+  File file = fs->open(tmpPath.c_str(), FILE_WRITE); // Use a temporary path while writing
   if (!file) {
     ESP_LOGE(TAG,"Failed to open file %s for writing!", path.c_str());
-    free(wavBuffer); wavBuffer = NULL;
-    return false;
+    free(localSaveBuffer);
+    return;
   }
   ESP_LOGI(TAG,"Opened file %s for writing", path.c_str());
-
-  int savedLength = recordingLength / SAVED_SAMPLE_INTERVAL;
-  if (SAVED_BIT_DEPTH_DIVIDE){
-    savedLength = savedLength / 2;
-  }
-  ESP_LOGI(TAG,"Will be saving %d bytes of audio data", savedLength);
   
   pcm_wav_header_t wavHeader;
   if (SAVED_BIT_DEPTH_DIVIDE){
@@ -133,21 +172,21 @@ bool Dictaphone::saveRecording(fs::FS &fs, String filePrefix){
   }
 
   bool failedWrite = file.write((uint8_t *)&wavHeader, PCM_WAV_HEADER_SIZE) != PCM_WAV_HEADER_SIZE; // Write the audio header to the file
-  failedWrite &= file.write(wavBuffer + DISCARD_START, savedLength) != savedLength; // Write the audio data to the file
+  failedWrite &= file.write(localSaveBuffer + DISCARD_START, localSaveBufferSize) != localSaveBufferSize; // Write the audio data to the file
   if (failedWrite) {
     ESP_LOGE(TAG,"Failed to write audio data to file!");
-    free(wavBuffer); wavBuffer = NULL;
+    free(localSaveBuffer);
     file.close();
-    return false;
+    return;
   }
 
-  ESP_LOGI(TAG,"Saved %d bytes header and %d bytes data", PCM_WAV_HEADER_SIZE, savedLength);
+  ESP_LOGI(TAG,"Saved %d bytes header and %d bytes data", PCM_WAV_HEADER_SIZE, localSaveBufferSize);
 
   // Close the file
   file.close();
-  free(wavBuffer); wavBuffer = NULL;
-  fs.rename(tmpPath.c_str(), path.c_str()); // Rename to final name for further processing.
-  return true;
+  free(localSaveBuffer);
+  fs->rename(tmpPath.c_str(), path.c_str()); // Rename to final name for further processing.
+  ESP_LOGI(TAG, "StackHighWaterMark: %u bytes", uxTaskGetStackHighWaterMark(NULL));
 }
 
 uint16_t Dictaphone::getSecondsRecorded(){
@@ -155,10 +194,14 @@ uint16_t Dictaphone::getSecondsRecorded(){
   return ((recordingLength)/MILLISECOND_LENGTH)/1000;
 }
 
-
-uint8_t * Dictaphone::getBuffer(){
-  return wavBuffer + DISCARD_START;
+uint16_t Dictaphone::getMaxRecordingSeconds(){
+  return (bufferSize/MILLISECOND_LENGTH)/1000;
 }
+
+
+/*uint8_t * Dictaphone::getBuffer(){
+  return wavBuffer + DISCARD_START;
+}*/
 size_t Dictaphone::getRecordingLength(){
   return recordingLength;
 }

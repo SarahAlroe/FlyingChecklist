@@ -1095,25 +1095,14 @@ void DisplayManager::delayDots() {
   display.refresh();
 }
 
-void DisplayManager::drawLargeTimer(uint16_t seconds){
-  uint8_t minutes = seconds / 60;
-  seconds = seconds % 60;
-  String secondsString = String(seconds);
-  String minutesString = String(minutes);
-  if (secondsString.length() < 2){
-    secondsString = "0"+secondsString;
-  }
-  if (minutesString.length() < 2){
-    minutesString = "0"+minutesString;
-  }
-
-  display.fillRect(0, SCREEN_HEIGHT/2+50, SCREEN_WIDTH, 34, WHITE);
-  display.setTextSize(4); //8*4 = 32 pixels heigh
+void DisplayManager::drawLargeTimer(uint16_t seconds, uint16_t outOfSeconds){
+  display.fillRect(0, SCREEN_HEIGHT/2+50, SCREEN_WIDTH, 34*2 + 9, WHITE);
+  display.setTextSize(4); // 8*4 = 32 pixels high
   display.setCursor((SCREEN_WIDTH-5*6*4)/2, SCREEN_HEIGHT/2+51);
-  display.print(minutesString);
-  display.print(":");
-  display.print(secondsString);
-
+  display.print(secondsMinutesString(seconds));
+  display.drawFastHLine((SCREEN_WIDTH-5*6*4-8)/2, SCREEN_HEIGHT/2+51+32+5, 5*6*4+8, BLACK);
+  display.setCursor((SCREEN_WIDTH-5*6*4)/2, SCREEN_HEIGHT/2+51+32+9);
+  display.print(secondsMinutesString(outOfSeconds));
   display.refresh();
 }
 

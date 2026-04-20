@@ -57,7 +57,8 @@ const time_t ANCIENT_TIME = 1771512100;
 #define FILENAME_CONFIG "/config.json"  // Location of config file
 #define FILENAME_WHISPER_CERT "/whisper.pem" // Location of the certificate for the whisper server
 #define FILENAME_UPDATE_CERT "/update.pem" // Certificate for the update server
-#define FILENAME_TMP_WAV "/tmp.wav"
+#define FILENAME_TMP_PREFIX "/tmp"
+#define FILE_WAV_EXTENSION ".wav"
 #define DIRNAME_RECORDINGS  "/rec"
 #define DIRNAME_NOTES "/notes"
 #define DIRNAME_CRON "/cron"
