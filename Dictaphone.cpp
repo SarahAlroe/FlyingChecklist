@@ -125,7 +125,7 @@ void Dictaphone::saveRecording(String filePrefix){
   ESP_LOGI(TAG,"Saving buffer %p of length %d with prefix %s", (void *)saveBuffer, saveBufferSize, savePrefix.c_str());
 
   status->processes ++;
-  xTaskCreate(this->startAsyncSaveRecording, "AsyncSaveRec", 4096, this, 1, NULL);
+  xTaskCreate(this->startAsyncSaveRecording, "AsyncSaveRec", 4096, this, 0, NULL); // Lower priority for background activity
 }
 
 void Dictaphone::startAsyncSaveRecording(void* _this){

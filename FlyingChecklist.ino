@@ -246,7 +246,7 @@ void setup(void) {
     transcribeMessagesTask, "TranscribeNow",  // A name just for humans
     16384,//8192,                                    // The stack size
     NULL,                                     // Pass reference to a variable describing the task number
-    1,                                        // priority
+    0,                                        // priority 0 - background activity
     NULL                                      // Task handle is not used here - simply pass NULL
   );
 
@@ -416,7 +416,7 @@ void loop(void) {
           status.hasNews = true;
         }
         if (systemConfiguration[STR_UI][STR_VIBRATION_FEEDBACK]){
-          xTaskCreate(asyncPlayVibrationFeedback, "AsyncPlayVibrationFeedback", 128, NULL, 1, NULL);
+          xTaskCreate(asyncPlayVibrationFeedback, "AsyncPlayVibrationFeedback", 128, NULL, 0, NULL); // Priority 0, precision not important
         }
         if (systemConfiguration[STR_UI][STR_LED_FEEDBACK]){
           RTC_SLOW_MEM[ULP_ADDR_LED_FB] = 1;
@@ -798,7 +798,7 @@ void shiftNotesRelative(int8_t shift) {
   
   if (systemConfiguration[STR_UI][STR_VIBRATION_POSITION]){
     uint32_t vibrationTaps = notebookIndex+1;
-    xTaskCreate(asyncPlayVibrationTaps, "AsyncPlayVibrationTaps", 128, (void *)&vibrationTaps, 1, NULL);
+    xTaskCreate(asyncPlayVibrationTaps, "AsyncPlayVibrationTaps", 128, (void *)&vibrationTaps, 0, NULL); // Priority 0, precision not important
   }
 
   notes.init(systemConfiguration[STR_LISTS][notebookIndex][STR_NAME], getListConfig(notebookIndex), -1);
@@ -824,7 +824,7 @@ void recordMessage() {
   ESP_LOGI(TAG, "recording...");
   int8_t recordingIndex = notebookIndex;                                             // Save what notebook this recording will belong to
   status.recording = true;                                                           // Update status
-  xTaskCreate(asyncClearToMic, "AsyncClearToMic", 2048, NULL, 1, &asyncAnimHandle);  // Show recording screen async to start recording immediately
+  xTaskCreate(asyncClearToMic, "AsyncClearToMic", 2048, NULL, 2, &asyncAnimHandle);  // Show recording screen async to start recording immediately Higher priority for UI responsiveness
 
   // Record as long as slider is held
   dictaphone.beginRecording();
