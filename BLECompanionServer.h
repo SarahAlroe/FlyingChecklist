@@ -16,9 +16,11 @@ class BLECompanionServer {
         class DataCallback;
         bool deviceConnected = false;
         bool deviceWasConnected = false;
+        bool waitingForFirstConnection = true;
         void onCommand(uint8_t * command);
         void setBattery(uint8_t batteryLevel = 0);
         bool hasFilesPending();
+        uint32_t msSinceLastDeviceActitity();
         void onData(String data);
         
     private:
@@ -45,6 +47,7 @@ class BLECompanionServer {
         bool transferring;
         bool filesPending;
         uint8_t batteryLevel;
+        uint32_t lastActivityMs;
         void(*newItemCallback)(ListItemToAdd, bool);
 
         BLEServer *pServer;

@@ -106,21 +106,21 @@ void Dictaphone::processRecording(float limiterFactor){
 }
 
 void Dictaphone::saveRecording(String filePrefix){
-  size_t savedLength = recordingLength / SAVED_SAMPLE_INTERVAL;
+  saveBufferSize = recordingLength / SAVED_SAMPLE_INTERVAL;
   if (SAVED_BIT_DEPTH_DIVIDE){
-    savedLength = savedLength / 2;
+    saveBufferSize = saveBufferSize / 2;
   }
-  ESP_LOGI(TAG,"Will be saving %d bytes of audio data", savedLength);
+  ESP_LOGI(TAG,"Will be saving %d bytes of audio data", saveBufferSize);
 
   //Reallocate to smaller size buffer
-  saveBuffer = (uint8_t *)ps_realloc(wavBuffer, savedLength);
+  saveBuffer = (uint8_t *)ps_realloc(wavBuffer, saveBufferSize);
   if (saveBuffer == NULL){
     ESP_LOGE(TAG,"Failed to reallocate buffer!");
     free(wavBuffer); wavBuffer = NULL;
     return;
   }
   wavBuffer = NULL;
-  saveBufferSize = savedLength;
+  recordingLength = 0;
   savePrefix = filePrefix;
   ESP_LOGI(TAG,"Saving buffer %p of length %d with prefix %s", (void *)saveBuffer, saveBufferSize, savePrefix.c_str());
 
@@ -166,9 +166,9 @@ void Dictaphone::asyncSaveRecording(){
   
   pcm_wav_header_t wavHeader;
   if (SAVED_BIT_DEPTH_DIVIDE){
-    wavHeader = PCM_WAV_HEADER_DEFAULT(recordingLength, I2S_DATA_BIT_WIDTH_8BIT, (uint32_t) (RECORD_SAMPLE_RATE / SAVED_SAMPLE_INTERVAL), I2S_SLOT_MODE_MONO);
+    wavHeader = PCM_WAV_HEADER_DEFAULT(localSaveBufferSize, I2S_DATA_BIT_WIDTH_8BIT, (uint32_t) (RECORD_SAMPLE_RATE / SAVED_SAMPLE_INTERVAL), I2S_SLOT_MODE_MONO);
   }else{
-    wavHeader = PCM_WAV_HEADER_DEFAULT(recordingLength, I2S_DATA_BIT_WIDTH_16BIT, (uint32_t) (RECORD_SAMPLE_RATE / SAVED_SAMPLE_INTERVAL), I2S_SLOT_MODE_MONO); 
+    wavHeader = PCM_WAV_HEADER_DEFAULT(localSaveBufferSize, I2S_DATA_BIT_WIDTH_16BIT, (uint32_t) (RECORD_SAMPLE_RATE / SAVED_SAMPLE_INTERVAL), I2S_SLOT_MODE_MONO); 
   }
 
   bool failedWrite = file.write((uint8_t *)&wavHeader, PCM_WAV_HEADER_SIZE) != PCM_WAV_HEADER_SIZE; // Write the audio header to the file

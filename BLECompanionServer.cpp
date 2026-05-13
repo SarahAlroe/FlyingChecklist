@@ -37,6 +37,7 @@ public:
     : parent(p) {}
   void onConnect(BLEServer* pServer) override {
     parent->deviceConnected = true;
+    parent->waitingForFirstConnection = false;
     ESP_LOGI(TAG, "Device connected");
   }
   void onDisconnect(BLEServer* pServer) override {
@@ -183,7 +184,7 @@ void BLECompanionServer::onCommand(uint8_t* command) {
       ESP_LOGI(TAG, "Adding list item '%s' to list %d",itemToAdd.text.c_str(), itemToAdd.listIndex);
       newItemCallback(itemToAdd, true);
       responseBuffer = "";
-      if (status.responsesWaiting>0){
+      if (status.responsesWaiting > 0){
         status.responsesWaiting --;
       }
     }
@@ -209,11 +210,13 @@ void BLECompanionServer::onCommand(uint8_t* command) {
       }
     }
   }
+  lastActivityMs = millis();
 }
 
 void BLECompanionServer::onData(String data) {
   ESP_LOGI(TAG, "Recieved note data part '%s'",data.c_str());
   responseBuffer = responseBuffer + data;
+  lastActivityMs = millis();
 }
 
 void BLECompanionServer::startTransfer() {
@@ -289,21 +292,28 @@ void BLECompanionServer::sendNextChunk() {
     uint8_t buffer[chunkSize];
     size_t toRead = min(chunkSize, fileSize - bytesSent);
     size_t readBytes = currentFile.read(buffer, toRead);
+    size_t positionBeforeRead = currentFile.position();
     if (readBytes > 0) {
       //pDataCharacteristic->setValue(buffer, readBytes);
       //pDataCharacteristic->indicate();
       //pDataCharacteristic->notify();
       uint16_t connectionId = pServer->getConnId();
       uint16_t attributeHandle = pDataCharacteristic->getHandle();
-      sendNotification(connectionId, attributeHandle, buffer, readBytes);
+      if(sendNotification(connectionId, attributeHandle, buffer, readBytes)){
+        lastActivityMs = millis();
+        for (size_t i = 0; i < readBytes; ++i) {
+          fileChecksum[i] ^= buffer[i];
+        }
+        bytesSent += readBytes;
+      }else{
+        currentFile.seek(positionBeforeRead);
+        // If failed to notify, roll back the file to the previous position.
+      }
       /*if (!sendNotification(connectionId, attributeHandle, buffer, readBytes)){
         finishFile(false);
         return;
       }*/
-      for (size_t i = 0; i < readBytes; ++i) {
-        fileChecksum[i] ^= buffer[i];
-      }
-      bytesSent += readBytes;
+      
       delay(20);
     }
     ESP_LOGV(TAG, "Sent %lu bytes out of %lu", bytesSent, fileSize);
@@ -369,4 +379,8 @@ bool BLECompanionServer::sendNotification(uint16_t connection_id, uint16_t attri
     delay(20);
   }
   return false;
+}
+
+uint32_t BLECompanionServer::msSinceLastDeviceActitity(){
+  return millis() - lastActivityMs;
 }

@@ -212,12 +212,12 @@ void setup(void) {
     // If deliberately wake by unlock, let attempt transcribing files again.
     nextTranscriptionAttempt = 0;
     nextBLECheckin = 0;
-    if (digitalRead(PIN_SW_LEFT)){
-      takeScreenshot();
-    }
   } else if (status.locked && (wakeupPin == PIN_SW_LEFT || wakeupPin == PIN_SW_RIGHT || wakeupPin == PIN_SW_0 || wakeupPin == PIN_SW_1 || wakeupPin == PIN_SW_2 || wakeupPin == PIN_SW_3 || wakeupPin == PIN_SW_4 || wakeupPin == PIN_SW_5) ){
     // Locked and a button was pressed. Flash locked icon, then sleep
     display.flashLock();
+    if (digitalRead(PIN_SW_LEFT) && digitalRead(PIN_SW_RIGHT) ){
+      takeScreenshot(); // If left and right button has been held, take screenshot
+    }
     goToSleep();
   } else if (wakeupPin == PIN_SW_LEFT) {
     shiftNotesRelative(-1);
@@ -271,6 +271,8 @@ void debugMenu() {
   sharpDisplay.println("");
   sharpDisplay.println("Please leave plugged into power while in debug mode");
   sharpDisplay.refresh();
+
+  takeScreenshot();
 
   // Avoid accidental mispress
   while (aButtonIsHeld()) {
@@ -416,7 +418,8 @@ void loop(void) {
           status.hasNews = true;
         }
         if (systemConfiguration[STR_UI][STR_VIBRATION_FEEDBACK]){
-          xTaskCreate(asyncPlayVibrationFeedback, "AsyncPlayVibrationFeedback", 128, NULL, 0, NULL); // Priority 0, precision not important
+          xTaskCreate(asyncPlayVibrationFeedback, "AsyncPlayVibrationFeedback", 2048, NULL, 0, NULL); // Priority 0, precision not important
+          // TODO possible to reduce stack size?
         }
         if (systemConfiguration[STR_UI][STR_LED_FEEDBACK]){
           RTC_SLOW_MEM[ULP_ADDR_LED_FB] = 1;
@@ -494,7 +497,6 @@ void takeScreenshot(){
   // BMP row size is always a multiple of 4, hence we must pad from a 400 pixel -> 50 byte row to a 52 byte row
   while (bufferSize > 0){
     bufferSize = bufferSize - file.write(body, 50); // Write 50 bytes of screenshot
-    file.write(body, 50);
     file.write(0); // Write two empty bytes of padding
     file.write(0);
   }
@@ -505,14 +507,14 @@ void takeScreenshot(){
 void asyncPlayVibrationFeedback(void *pvParameters) {
   //TODO make configurable
   digitalWrite(PIN_OUT_FB, HIGH);
-  delay(200);
+  delay(50);
   digitalWrite(PIN_OUT_FB, LOW);
   delay(200);
   digitalWrite(PIN_OUT_FB, HIGH);
-  delay(200);
+  delay(500);
   digitalWrite(PIN_OUT_FB, LOW);
-  vTaskDelete(NULL);
   ESP_LOGI(TAG, "StackHighWaterMark: %u bytes", uxTaskGetStackHighWaterMark(NULL));
+  vTaskDelete(NULL);
 }
 
 void asyncPlayVibrationTaps(void *pvParameters) {
@@ -521,14 +523,13 @@ void asyncPlayVibrationTaps(void *pvParameters) {
     tapCount = 1;
   }
   for(uint16_t i = 0; i<tapCount; i++){
-    pinMode(PIN_OUT_FB, INPUT_PULLUP);
-    //digitalWrite(PIN_OUT_FB, HIGH);
+    digitalWrite(PIN_OUT_FB, HIGH);
     delay(25);
-    pinMode(PIN_OUT_FB, INPUT_PULLDOWN);
-    //digitalWrite(PIN_OUT_FB, LOW);
+    digitalWrite(PIN_OUT_FB, LOW);
     delay(275);
   }
   ESP_LOGI(TAG, "StackHighWaterMark: %u bytes", uxTaskGetStackHighWaterMark(NULL));
+  digitalWrite(PIN_OUT_FB, LOW);
   vTaskDelete(NULL);
 }
 
@@ -798,7 +799,8 @@ void shiftNotesRelative(int8_t shift) {
   
   if (systemConfiguration[STR_UI][STR_VIBRATION_POSITION]){
     uint32_t vibrationTaps = notebookIndex+1;
-    xTaskCreate(asyncPlayVibrationTaps, "AsyncPlayVibrationTaps", 128, (void *)&vibrationTaps, 0, NULL); // Priority 0, precision not important
+    xTaskCreate(asyncPlayVibrationTaps, "AsyncPlayVibrationTaps", 2048, (void *)&vibrationTaps, 0, NULL); // Priority 0, precision not important
+    // TODO possible to reduce stack size?
   }
 
   notes.init(systemConfiguration[STR_LISTS][notebookIndex][STR_NAME], getListConfig(notebookIndex), -1);
@@ -861,9 +863,8 @@ void recordMessage() {
 
 void asyncClearToMic(void *pvParameters) {
   display.clearToLargeIcon(ICON_MIC);  // Animate screen to show recording
-  uint16_t maxRecordingSeconds = dictaphone.getMaxRecordingSeconds();
   while (true) {
-    display.drawLargeTimer(dictaphone.getSecondsRecorded(), maxRecordingSeconds);
+    display.drawLargeTimer(dictaphone.getSecondsRecorded(), dictaphone.getMaxRecordingSeconds());
     delay(1000);
     ESP_LOGI(TAG, "StackHighWaterMark: %u bytes", uxTaskGetStackHighWaterMark(NULL));
   }
@@ -988,14 +989,19 @@ void transcribeMessagesTask(void *pvParameters) {
         uint32_t startTime = millis();
         ESP_LOGI(TAG, "Serving files over BLE");
         bleCompanionServer.hasFilesPending();
-        while (bleCompanionServer.serveFiles()) {
-          delay(5);
-          if (millis() - startTime > 2 * MS_TO_MIN_FACTOR ) {
-            ESP_LOGW(TAG, "BLE file serving hit watchdog timeout");
+        while((millis() - startTime) <= 6 * MS_TO_MIN_FACTOR ){ // While below final watchdog time of 6 minutes
+          bleCompanionServer.serveFiles();
+          if (bleCompanionServer.waitingForFirstConnection && ((millis() - startTime) > 20 * MS_TO_S_FACTOR )){
+            // If haven't gotten connection in 20 sec, timeout
             break;
           }
+          if((!bleCompanionServer.waitingForFirstConnection) && (bleCompanionServer.msSinceLastDeviceActitity() > (10 * MS_TO_S_FACTOR))){
+            // if no longer waiting for connection but havent had a transmission in 10 sec, timeout.
+            break;
+          }
+          delay(2);
         }
-        delay(1000);
+        delay(400);
       }
 
       hasRecordingsToProcess();
